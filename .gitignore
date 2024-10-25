@@ -1,0 +1,63 @@
+# Compiled Object files
+*.slo
+*.lo
+*.o
+*.obj
+
+# Precompiled Headers
+*.gch
+*.pch
+
+# Compiled Dynamic libraries
+*.so
+*.dylib
+*.dll
+
+# Fortran module files
+*.mod
+
+# Compiled Static libraries
+*.lai
+*.la
+*.a
+*.lib
+
+# Executables
+*.exe
+*.out
+*.app
+
+# windows
+*.ilk
+*.pdb
+*.exp
+
+*.m4
+*.in
+*.pc
+*.libs
+*.deps
+*.cache
+*.dirstamp
+*.swp
+*.orig
+*.rej
+
+bin
+cmake-build-*
+CMakeLists.txt.user
+config*
+build-aux
+test_tmp_*
+
+.DS_Store
+.idea
+.vscode
+*~
+
+CMakeCache.txt
+CMakeUserPresets.json
+build/
+CMakeFiles/
+*.torrent
+download/
