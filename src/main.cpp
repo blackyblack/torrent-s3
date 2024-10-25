@@ -1,5 +1,8 @@
 #include <iostream>
 #include <fstream>
+#include <thread>
+#include <cstdio>
+#include <cstdlib>
 
 #include <libtorrent/session.hpp>
 #include <libtorrent/add_torrent_params.hpp>
@@ -8,6 +11,8 @@
 #include <libtorrent/alert_types.hpp>
 #include <libtorrent/read_resume_data.hpp>
 #include <libtorrent/write_resume_data.hpp>
+
+#include "./deque.hpp"
 
 // return the name of a torrent status enum
 char const* state(lt::torrent_status::state_t s)
@@ -49,7 +54,7 @@ class InputParser{
 };
 
 enum file_status_t {
-  READY,
+  WAITING,
   DOWNLOADING,
   COMPLETED
 };
@@ -62,6 +67,11 @@ struct file_info_t {
 struct maybe_torrent_info_t {
   std::shared_ptr<const lt::torrent_info> info;
   std::string error;
+};
+
+struct s3_task_event_t {
+  bool terminate;
+  std::string new_file;
 };
 
 bool is_download_complete(const std::vector<file_info_t> &files) {
@@ -83,7 +93,7 @@ std::vector<int> next_downloadable_indexes(const std::vector<file_info_t> &files
   // try to find next files that fits the size limit
   for (int i = 0; i < files.size(); i++) {
     auto f = files[i];
-    if (f.status != READY) continue;
+    if (f.status != WAITING) continue;
     if (first_uncompleted_index < 0) first_uncompleted_index = i;
     auto file_size = f.size;
     if (total_size + file_size > size_limit_bytes) {
@@ -152,6 +162,42 @@ maybe_torrent_info_t load_magnet_link_info(std::string magnet_link) {
     return maybe_torrent_info_t { 0, error_message };
   }
   return maybe_torrent_info_t { h.torrent_file(), "" };
+}
+
+std::string path_join(const std::string& p1, const std::string& p2)
+{
+  char sep = '/';
+  std::string tmp = p1;
+
+#ifdef _WIN32
+  sep = '\\';
+#endif
+
+  // Add separator if it is not included in the first path:
+  if (p1[p1.length() - 1] != sep) {
+    tmp += sep;
+    return tmp + p2;
+  }
+  return p1 + p2;
+}
+
+void s3_upload_task(ThreadSafeDeque<s3_task_event_t> &message_queue)
+{
+  fprintf(stderr, "Starting S3 upload task\n");
+
+  while (true) {
+    auto message = message_queue.pop_front_waiting();
+    if (message.terminate) {
+      return;
+    }
+
+    auto filename = message.new_file;
+    fprintf(stderr, "Uploading %s\n", filename.c_str());
+    fprintf(stderr, "Deleting %s\n", filename.c_str());
+    std::remove(filename.c_str());
+  }
+
+  fprintf(stderr, "S3 upload task completed\n");
 }
 
 int main(int argc, char const* argv[])
@@ -240,7 +286,7 @@ int main(int argc, char const* argv[])
   std::vector<file_info_t> files;
   for (auto file_index: atp.ti->files().file_range()) {
     auto file_size = atp.ti->files().file_size(file_index);
-    files.push_back(file_info_t { (unsigned long long)file_size, READY });
+    files.push_back(file_info_t { (unsigned long long)file_size, WAITING });
   }
 
   auto to_download_indexes = next_downloadable_indexes(files, limit_size_bytes);
@@ -263,6 +309,9 @@ int main(int argc, char const* argv[])
   lt::torrent_handle h = session.add_torrent(atp);
   bool download_completed = false;
   std::string error_message = "";
+  ThreadSafeDeque<s3_task_event_t> upload_files_queue;
+  // use lambda to MSVC workaround
+  std::thread s3_task_handle([&](){ s3_upload_task(upload_files_queue); });
 
 	while (true) {
     if (download_completed) {
@@ -281,12 +330,9 @@ int main(int argc, char const* argv[])
         auto event = lt::alert_cast<lt::file_completed_alert>(a);
         int file_index = (int)event->index;
         files[file_index].status = COMPLETED;
-        std::cout << "File #" << file_index << " completed" << std::endl;
+        std::cout << "File #" << file_index + 1 << " completed" << std::endl;
 
-        ///TODO: push downloaded file to S3
-        std::cout << "Pushing \"" << atp.ti->files().file_path(event->index) << "\" to S3" << std::endl;
-        ///TODO: delete downloaded file
-        std::cout << "Removing \"" << atp.ti->files().file_path(event->index) << "\" file" << std::endl;
+        upload_files_queue.push_back(s3_task_event_t { false, path_join(download_path, atp.ti->files().file_path(event->index)) });
 
         if (is_download_complete(files)) {
           download_completed = true;
@@ -306,13 +352,9 @@ int main(int argc, char const* argv[])
 			if (auto st = lt::alert_cast<lt::state_update_alert>(a)) {
 				if (st->status.empty()) continue;
 
-				// we only have a single torrent, so we know which one
-				// the status is for
 				lt::torrent_status const& s = st->status[0];
 				std::cout << "\r" << state(s.state) << " "
 					<< (s.download_payload_rate / 1000) << " kB/s "
-					<< (s.total_done / 1000) << " kB ("
-					<< (s.progress_ppm / 10000) << "%) downloaded ("
 					<< s.num_peers << " peers)\x1b[K" << std::endl;
 				std::cout.flush();
 			}
@@ -324,11 +366,17 @@ int main(int argc, char const* argv[])
 		session.post_torrent_updates();
 	}
 
+  upload_files_queue.push_back(s3_task_event_t { true, "" });
+
   if (!error_message.empty()) {
     fprintf(stderr, "Error during downloading torrent file: %s\n", error_message.c_str());
     return 1;
   }
 
   fprintf(stderr, "Downloading torrent completed\n");
+
+  s3_task_handle.join();
+  fprintf(stderr, "S3 upload completed\n");
+
   return 0;
 }
