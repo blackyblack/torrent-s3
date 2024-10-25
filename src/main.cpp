@@ -48,6 +48,112 @@ class InputParser{
         std::vector <std::string> tokens;
 };
 
+enum file_status_t {
+  READY,
+  DOWNLOADING,
+  COMPLETED
+};
+
+struct file_info_t {
+  unsigned long long size;
+  file_status_t status;
+};
+
+struct maybe_torrent_info_t {
+  std::shared_ptr<const lt::torrent_info> info;
+  std::string error;
+};
+
+bool is_download_complete(const std::vector<file_info_t> &files) {
+  for (const auto &f: files) {
+    if (f.status != COMPLETED) return false;
+  }
+  return true;
+}
+
+std::vector<int> next_downloadable_indexes(const std::vector<file_info_t> &files, unsigned long long size_limit_bytes) {
+  unsigned long long total_size = 0;
+  std::vector<int> to_download_file_indexes;
+  int first_uncompleted_index = -1;
+  // calculate currently downloading size
+  for (const auto &f: files) {
+    if (f.status != DOWNLOADING) continue;
+    total_size += f.size;
+  }
+  // try to find next files that fits the size limit
+  for (int i = 0; i < files.size(); i++) {
+    auto f = files[i];
+    if (f.status != READY) continue;
+    if (first_uncompleted_index < 0) first_uncompleted_index = i;
+    auto file_size = f.size;
+    if (total_size + file_size > size_limit_bytes) {
+      continue;
+    }
+    to_download_file_indexes.push_back(i);
+    total_size += file_size;
+  }
+  // if no file fits a size limit, add first available file and download one by one
+  if (total_size == 0 && first_uncompleted_index >= 0) {
+    to_download_file_indexes.push_back(first_uncompleted_index);
+  }
+  return to_download_file_indexes;
+}
+
+maybe_torrent_info_t load_magnet_link_info(std::string magnet_link) {
+  auto magnet_params = lt::parse_magnet_uri(magnet_link);
+  magnet_params.save_path = ".";
+  magnet_params.flags |= lt::torrent_flags::default_dont_download;
+  lt::session magnet_session;
+  lt::settings_pack p;
+  p.set_int(lt::settings_pack::alert_mask, lt::alert::all_categories);
+  magnet_session.apply_settings(p);
+  lt::torrent_handle h = magnet_session.add_torrent(magnet_params);
+
+  bool download_completed = false;
+  std::string error_message;
+  while (true) {
+    if (download_completed) break;
+		std::vector<lt::alert*> alerts;
+		magnet_session.pop_alerts(&alerts);
+
+		for (lt::alert const* a : alerts) {
+      if (lt::alert_cast<lt::torrent_finished_alert>(a)) {
+				download_completed = true;
+				break;
+			}
+
+			if (lt::alert_cast<lt::torrent_error_alert>(a)) {
+        error_message = a->message();
+        download_completed = true;
+				break;
+			}
+
+			if (auto st = lt::alert_cast<lt::state_update_alert>(a)) {
+				if (st->status.empty()) continue;
+
+				// we only have a single torrent, so we know which one
+				// the status is for
+				lt::torrent_status const& s = st->status[0];
+				std::cout << "\r" << state(s.state) << " "
+					<< (s.download_payload_rate / 1000) << " kB/s "
+					<< (s.total_done / 1000) << " kB ("
+					<< (s.progress_ppm / 10000) << "%) downloaded ("
+					<< s.num_peers << " peers)\x1b[K" << std::endl;
+				std::cout.flush();
+			}
+		}
+		std::this_thread::sleep_for(std::chrono::milliseconds(200));
+
+		// ask the session to post a state_update_alert, to update our
+		// state output for the torrent
+		magnet_session.post_torrent_updates();
+	}
+  if (!error_message.empty()) {
+    return maybe_torrent_info_t { 0, error_message };
+  }
+  return maybe_torrent_info_t { h.torrent_file(), "" };
+}
+
 int main(int argc, char const* argv[])
 {
   if (argc < 3) {
@@ -111,14 +217,17 @@ int main(int argc, char const* argv[])
     fprintf(stderr, "Downloading from %s to temporary directory \"%s\" with size limit %.3f MB\n", what.c_str(), download_path.c_str(), ((double)limit_size_bytes) / 1024 / 1024);
   }
 
-  lt::session ses;
-  lt::settings_pack p;
-  p.set_int(lt::settings_pack::alert_mask, lt::alert::all_categories);
-  ses.apply_settings(p);
-
   lt::add_torrent_params atp;
+  atp.save_path = download_path;
+
   if (use_magnet) {
-    atp = lt::parse_magnet_uri(source);
+    fprintf(stderr, "Loading magnet link metadata\n");
+    auto ti = load_magnet_link_info(source);
+    if (!ti.error.empty()) {
+      fprintf(stderr, "Error during downloading magnet link info: %s\n", ti.error.c_str());
+      return 1;
+    }
+    atp.ti = std::const_pointer_cast<lt::torrent_info>(ti.info);
   }
   if (!use_url && !use_magnet) {
     atp.ti = std::make_shared<lt::torrent_info>(source);
@@ -127,34 +236,71 @@ int main(int argc, char const* argv[])
     fprintf(stderr, "Downloading torrents from URL is not currently supported\n");
     return 1;
   }
-  atp.save_path = download_path;
 
-  // this is how to stop some files from downloading
-  //atp.file_priorities = std::vector<libtorrent::download_priority_t>{libtorrent::default_priority, libtorrent::dont_download};
+  std::vector<file_info_t> files;
+  for (auto file_index: atp.ti->files().file_range()) {
+    auto file_size = atp.ti->files().file_size(file_index);
+    files.push_back(file_info_t { (unsigned long long)file_size, READY });
+  }
 
-  lt::torrent_handle h = ses.add_torrent(atp);
-  int completed = 0;
+  auto to_download_indexes = next_downloadable_indexes(files, limit_size_bytes);
 
-	for (;;) {
+  // only download files, that are in 'to_download_indexes'
+  std::vector<libtorrent::download_priority_t> file_priorities(files.size(), libtorrent::dont_download);
+  for (auto i: to_download_indexes) {
+    file_priorities[i] = libtorrent::default_priority;
+    files[i].status = DOWNLOADING;
+  }
+  atp.file_priorities = file_priorities;
+
+  lt::session session;
+  lt::settings_pack p;
+  p.set_int(lt::settings_pack::alert_mask, lt::alert::all_categories);
+  session.apply_settings(p);
+
+  fprintf(stderr, "Downloading torrent\n");
+
+  lt::torrent_handle h = session.add_torrent(atp);
+  bool download_completed = false;
+  std::string error_message = "";
+
+	while (true) {
+    if (download_completed) {
+      break;
+    }
 		std::vector<lt::alert*> alerts;
-		ses.pop_alerts(&alerts);
+		session.pop_alerts(&alerts);
 
 		for (lt::alert const* a : alerts) {
-			// if we receive the finished alert or an error, we're done
-			if (lt::alert_cast<lt::torrent_finished_alert>(a)) {
-				break;
-			}
 			if (lt::alert_cast<lt::torrent_error_alert>(a)) {
-				std::cout << a->message() << std::endl;
+				download_completed = true;
+        error_message = a->message();
 				break;
 			}
       if (lt::alert_cast<lt::file_completed_alert>(a)) {
-        std::cout << "File #" << lt::alert_cast<lt::file_completed_alert>(a)->index << " completed" << std::endl;
-        completed++;
+        auto event = lt::alert_cast<lt::file_completed_alert>(a);
+        int file_index = (int)event->index;
+        files[file_index].status = COMPLETED;
+        std::cout << "File #" << file_index << " completed" << std::endl;
 
-        if (completed > 5) {
-          h.prioritize_files(std::vector<libtorrent::download_priority_t>{libtorrent::default_priority});
+        ///TODO: push downloaded file to S3
+        std::cout << "Pushing \"" << atp.ti->files().file_path(event->index) << "\" to S3" << std::endl;
+        ///TODO: delete downloaded file
+        std::cout << "Removing \"" << atp.ti->files().file_path(event->index) << "\" file" << std::endl;
+
+        if (is_download_complete(files)) {
+          download_completed = true;
+          break;
         }
+
+        // now we can allow additional downloads
+        auto to_download_indexes = next_downloadable_indexes(files, limit_size_bytes);
+        for (auto i: to_download_indexes) {
+          file_priorities[i] = libtorrent::default_priority;
+          files[i].status = DOWNLOADING;
+        }
+        h.prioritize_files(file_priorities);
+        continue;
 			}
 
 			if (auto st = lt::alert_cast<lt::state_update_alert>(a)) {
@@ -163,7 +309,7 @@ int main(int argc, char const* argv[])
 				// we only have a single torrent, so we know which one
 				// the status is for
 				lt::torrent_status const& s = st->status[0];
-				std::cout << '\r' << state(s.state) << ' '
+				std::cout << "\r" << state(s.state) << " "
 					<< (s.download_payload_rate / 1000) << " kB/s "
 					<< (s.total_done / 1000) << " kB ("
 					<< (s.progress_ppm / 10000) << "%) downloaded ("
@@ -175,6 +321,14 @@ int main(int argc, char const* argv[])
 
 		// ask the session to post a state_update_alert, to update our
 		// state output for the torrent
-		ses.post_torrent_updates();
+		session.post_torrent_updates();
 	}
+
+  if (!error_message.empty()) {
+    fprintf(stderr, "Error during downloading torrent file: %s\n", error_message.c_str());
+    return 1;
+  }
+
+  fprintf(stderr, "Downloading torrent completed\n");
+  return 0;
 }
