@@ -14,6 +14,8 @@
 
 #include "./deque.hpp"
 
+#define FILE_HASHES_STORAGE_NAME ".torrent_s3_hashlist"
+
 // return the name of a torrent status enum
 char const* state(lt::torrent_status::state_t s)
 {
@@ -74,6 +76,114 @@ struct s3_task_event_t {
   std::string new_file;
 };
 
+struct file_hash_info_t {
+  std::vector<std::vector<char>> hashes;
+
+  std::ostream& serialize(std::ostream& os, std::string file_name) const {
+    auto hashes_size = hashes.size();
+    os.write(reinterpret_cast<char *>(&hashes_size), sizeof(uint32_t));
+    for (const auto &h : hashes) {
+      auto hash_size = h.size();
+      os.write(reinterpret_cast<char *>(&hash_size), sizeof(uint32_t));
+      os.write(h.data(), h.size());
+    }
+    auto file_name_size = file_name.size();
+    os.write(reinterpret_cast<char *>(&file_name_size), sizeof(uint32_t));
+    os.write(file_name.c_str(), file_name.size());
+    return os;
+  }
+
+  static std::pair<std::pair<file_hash_info_t, std::string>, std::string> deserialize(std::istream& is) {
+    uint32_t hashes_size;
+    is.read(reinterpret_cast<char *>(&hashes_size), sizeof(uint32_t));
+    if (!is) {
+      return std::pair<std::pair<file_hash_info_t, std::string>, std::string>(std::pair<file_hash_info_t, std::string>(file_hash_info_t(), ""), "eof");
+    }
+    std::vector<std::vector<char>> hashes;
+    for (auto i = 0; i < hashes_size; i++) {
+      uint32_t hash_size;
+      is.read(reinterpret_cast<char *>(&hash_size), sizeof(uint32_t));
+      if (!is) {
+        return std::pair<std::pair<file_hash_info_t, std::string>, std::string>(std::pair<file_hash_info_t, std::string>(file_hash_info_t(), ""), "eof");
+      }
+      char* hash_bytes = new char[hash_size + 1]();
+      is.read(hash_bytes, hash_size);
+      std::vector<char> hash(hash_bytes, hash_bytes + hash_size);
+      hashes.push_back(hash);
+    }
+    uint32_t name_size;
+    is.read(reinterpret_cast<char *>(&name_size), sizeof(uint32_t));
+    if (!is) {
+      return std::pair<std::pair<file_hash_info_t, std::string>, std::string>(std::pair<file_hash_info_t, std::string>(file_hash_info_t(), ""), "eof");
+    }
+    char* name_bytes = new char[name_size + 1]();
+    is.read(name_bytes, name_size);
+    std::string name(name_bytes);
+    return std::pair<std::pair<file_hash_info_t, std::string>, std::string>(std::pair<file_hash_info_t, std::string>(file_hash_info_t {hashes}, name), "");
+  }
+};
+
+std::string path_join(const std::string& p1, const std::string& p2)
+{
+  char sep = '/';
+  std::string tmp = p1;
+
+#ifdef _WIN32
+  sep = '\\';
+#endif
+
+  // Add separator if it is not included in the first path:
+  if (p1[p1.length() - 1] != sep) {
+    tmp += sep;
+    return tmp + p2;
+  }
+  return p1 + p2;
+}
+
+std::ostream& serialize_file_hashes(const std::unordered_map<std::string, file_hash_info_t>& files, std::ostream& os) {
+  for (auto const &f: files) {
+    f.second.serialize(os, f.first);
+  }
+  return os;
+}
+
+std::unordered_map<std::string, file_hash_info_t> deserialize_file_hashes(std::istream& is) {
+  std::unordered_map<std::string, file_hash_info_t> files;
+  while (true) {
+    auto ret = file_hash_info_t::deserialize(is);
+    if (ret.second == "eof") {
+      break;
+    }
+    files[ret.first.second] = ret.first.first;
+  }
+  return files;
+}
+
+std::unordered_map<std::string, file_hash_info_t> load_hashlist(std::string download_path) {
+  auto file_path = path_join(download_path, FILE_HASHES_STORAGE_NAME);
+  std::ifstream ifs(file_path, std::ios::in | std::ios::binary);
+  const auto ret = deserialize_file_hashes(ifs);
+  ifs.close();
+  return ret;
+}
+
+void save_hashlist(std::string download_path, const std::unordered_map<std::string, file_hash_info_t>& files) {
+  auto file_path = path_join(download_path, FILE_HASHES_STORAGE_NAME);
+  std::ofstream ofs(file_path, std::ios::out | std::ios::binary);
+  serialize_file_hashes(files, ofs);
+  ofs.close();
+}
+
+std::tuple<lt::piece_index_t, lt::piece_index_t> file_piece_range(lt::file_storage const& fs, lt::file_index_t const file)
+{
+  auto const range = fs.map_file(file, 0, 1);
+  std::int64_t const file_size = fs.file_size(file);
+  std::int64_t const piece_size = fs.piece_length();
+  auto const end_piece = lt::piece_index_t(int((static_cast<int>(range.piece)
+    * piece_size + range.start + file_size - 1) / piece_size + 1));
+  return std::make_tuple(range.piece, end_piece);
+}
+
 bool is_download_complete(const std::vector<file_info_t> &files) {
   for (const auto &f: files) {
     if (f.status != COMPLETED) return false;
@@ -115,7 +225,7 @@ maybe_torrent_info_t load_magnet_link_info(std::string magnet_link) {
   magnet_params.flags |= lt::torrent_flags::default_dont_download;
   lt::session magnet_session;
   lt::settings_pack p;
-  p.set_int(lt::settings_pack::alert_mask, lt::alert::all_categories);
+  p.set_int(lt::settings_pack::alert_mask, lt::alert::error_notification | lt::alert::status_notification);
   magnet_session.apply_settings(p);
   lt::torrent_handle h = magnet_session.add_torrent(magnet_params);
 
@@ -127,6 +237,8 @@ maybe_torrent_info_t load_magnet_link_info(std::string magnet_link) {
 		magnet_session.pop_alerts(&alerts);
 
 		for (lt::alert const* a : alerts) {
+      std::cout << "\r Alert: " << a->message() << std::endl;
+
       if (lt::alert_cast<lt::torrent_finished_alert>(a)) {
 				download_completed = true;
 				break;
@@ -164,23 +276,6 @@ maybe_torrent_info_t load_magnet_link_info(std::string magnet_link) {
   return maybe_torrent_info_t { h.torrent_file(), "" };
 }
 
-std::string path_join(const std::string& p1, const std::string& p2)
-{
-  char sep = '/';
-  std::string tmp = p1;
-
-#ifdef _WIN32
-  sep = '\\';
-#endif
-
-  // Add separator if it is not included in the first path:
-  if (p1[p1.length() - 1] != sep) {
-    tmp += sep;
-    return tmp + p2;
-  }
-  return p1 + p2;
-}
-
 void s3_upload_task(ThreadSafeDeque<s3_task_event_t> &message_queue)
 {
   fprintf(stderr, "Starting S3 upload task\n");
@@ -203,26 +298,30 @@ void s3_upload_task(ThreadSafeDeque<s3_task_event_t> &message_queue)
 int main(int argc, char const* argv[])
 {
   if (argc < 3) {
-    fprintf(stderr, "usage: torrent-s3 [-u <torrent-url>] [-f <torrent-file>] [-m <magnet-link>] [-d <download-path>] [-l <limit-size-bytes>]\n");
+    fprintf(stderr, "usage: torrent-s3 [-u <torrent-url>] [-t <torrent-file>] [-m <magnet-link>] [-d <download-path>] [-l <limit-size-bytes>]\n");
     return 1;
   }
   InputParser args(argc, argv);
   auto torrent_url = args.getCmdOption("-u");
-  auto torrent_file = args.getCmdOption("-f");
+  auto torrent_file = args.getCmdOption("-t");
   auto magnet_link = args.getCmdOption("-m");
   bool use_magnet = false;
   bool use_url = false;
-  std::string source;
+  std::string source = torrent_file;
   if (torrent_url.empty() && torrent_file.empty() && magnet_link.empty()) {
     fprintf(stderr, "Torrent URL is not set.\nUse -u <torrent-url> to set URL for .torrent file.\nUse -f <torrent-file> to set path for .torrent file.\nUse -m <magnet-link> to set magnet link\n");
     return 1;
   }
-  if (!torrent_url.empty() && (!torrent_file.empty() || !magnet_link.empty())) {
-    fprintf(stderr, "Using torrent URL for downloading. Ignoring other torrent file sources\n");
+  if (!torrent_url.empty()) {
+    if (!torrent_file.empty() || !magnet_link.empty()) {
+      fprintf(stderr, "Using torrent URL for downloading. Ignoring other torrent file sources\n");
+    }
     source = torrent_url;
   }
-  if (torrent_url.empty() && !torrent_file.empty() && !magnet_link.empty()) {
-    fprintf(stderr, "Using torrent file for downloading. Ignoring other torrent file sources\n");
+  if (torrent_url.empty() && !torrent_file.empty()) {
+    if (!magnet_link.empty()) {
+      fprintf(stderr, "Using torrent file for downloading. Ignoring other torrent file sources\n");
+    }
     source = torrent_file;
   }
   if (torrent_url.empty() && torrent_file.empty() && !magnet_link.empty()) {
@@ -266,48 +365,90 @@ int main(int argc, char const* argv[])
   lt::add_torrent_params atp;
   atp.save_path = download_path;
 
-  if (use_magnet) {
-    fprintf(stderr, "Loading magnet link metadata\n");
-    auto ti = load_magnet_link_info(source);
-    if (!ti.error.empty()) {
-      fprintf(stderr, "Error during downloading magnet link info: %s\n", ti.error.c_str());
-      return 1;
+  try {
+    if (use_magnet) {
+      fprintf(stderr, "Loading magnet link metadata\n");
+      auto ti = load_magnet_link_info(source);
+      if (!ti.error.empty()) {
+        fprintf(stderr, "Error during downloading magnet link info: %s\n", ti.error.c_str());
+        return 1;
+      }
+      atp.ti = std::const_pointer_cast<lt::torrent_info>(ti.info);
     }
-    atp.ti = std::const_pointer_cast<lt::torrent_info>(ti.info);
+    if (!use_url && !use_magnet) {
+      atp.ti = std::make_shared<lt::torrent_info>(source);
+    }
+  } catch (std::exception e) {
+    fprintf(stderr, "Failed to load torrent info\n");
+    return 1;
   }
-  if (!use_url && !use_magnet) {
-    atp.ti = std::make_shared<lt::torrent_info>(source);
-  }
+
   if (use_url) {
     fprintf(stderr, "Downloading torrents from URL is not currently supported\n");
     return 1;
   }
 
+  auto hashlist = load_hashlist(download_path);
+  std::unordered_map<std::string, file_hash_info_t> new_hashlist;
+
   std::vector<file_info_t> files;
+  int file_count = atp.ti->num_files();
   for (auto file_index: atp.ti->files().file_range()) {
-    auto file_size = atp.ti->files().file_size(file_index);
-    files.push_back(file_info_t { (unsigned long long)file_size, WAITING });
+    const auto file_size = atp.ti->files().file_size(file_index);
+    const auto file_name = atp.ti->files().file_name(file_index).to_string();
+    std::vector<std::vector<char>> loaded_file_hashes;
+    if (hashlist.count(file_name) > 0) {
+      const auto loaded_file_info = hashlist[file_name];
+      loaded_file_hashes = loaded_file_info.hashes;
+    }
+    std::vector<std::vector<char>> torrent_file_hashes;
+    const auto range = file_piece_range(atp.ti->files(), file_index);
+    for (lt::piece_index_t pi = std::get<0>(range); pi != std::get<1>(range); pi++) {
+      const auto piece_hash = atp.ti->hash_for_piece(pi);
+      const auto hash_vector = std::vector<char>(piece_hash.data(), piece_hash.data() + piece_hash.size());
+      torrent_file_hashes.push_back(hash_vector);
+    }
+
+    new_hashlist[file_name] = file_hash_info_t {torrent_file_hashes};
+    if (torrent_file_hashes.size() != loaded_file_hashes.size()) {
+      files.push_back(file_info_t { (unsigned long long) file_size, WAITING });
+      continue;
+    }
+    bool equal = true;
+    for (auto i = 0; i < std::max(torrent_file_hashes.size(), loaded_file_hashes.size()); i++) {
+      if (torrent_file_hashes[i] != loaded_file_hashes[i]) {
+        equal = false;
+        break;
+      }
+    }
+    if (!equal) {
+      files.push_back(file_info_t { (unsigned long long) file_size, WAITING });
+      continue;
+    }
+    files.push_back(file_info_t { (unsigned long long) file_size, COMPLETED });
   }
 
   auto to_download_indexes = next_downloadable_indexes(files, limit_size_bytes);
 
+  bool download_completed = true;
+
   // only download files, that are in 'to_download_indexes'
-  std::vector<libtorrent::download_priority_t> file_priorities(files.size(), libtorrent::dont_download);
+  std::vector<libtorrent::download_priority_t> file_priorities(file_count, libtorrent::dont_download);
   for (auto i: to_download_indexes) {
     file_priorities[i] = libtorrent::default_priority;
     files[i].status = DOWNLOADING;
+    // at least on file needs download
+    download_completed = false;
   }
-  atp.file_priorities = file_priorities;
 
   lt::session session;
   lt::settings_pack p;
-  p.set_int(lt::settings_pack::alert_mask, lt::alert::all_categories);
+  p.set_int(lt::settings_pack::alert_mask, lt::alert::error_notification | lt::alert::status_notification | lt::alert::file_progress_notification);
   session.apply_settings(p);
 
   fprintf(stderr, "Downloading torrent\n");
 
   lt::torrent_handle h = session.add_torrent(atp);
-  bool download_completed = false;
   std::string error_message = "";
   ThreadSafeDeque<s3_task_event_t> upload_files_queue;
   // use lambda to MSVC workaround
@@ -378,5 +519,14 @@ int main(int argc, char const* argv[])
   s3_task_handle.join();
   fprintf(stderr, "S3 upload completed\n");
 
+  for (const auto &h: hashlist) {
+    if (new_hashlist.count(h.first) == 0) {
+      // This file was deleted - remove from S3
+      fprintf(stderr, "File \"%s\" was deleted. Remove from S3\n", h.first.c_str());
+    }
+  }
+
+  // save updated hashlist
+  save_hashlist(download_path, new_hashlist);
   return 0;
 }
