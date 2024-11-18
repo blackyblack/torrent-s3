@@ -9,7 +9,7 @@ MESSAGE(STATUS "Using toolchain file: ${CMAKE_TOOLCHAIN_FILE}")
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 
 find_package(LibtorrentRasterbar REQUIRED)
-add_executable (torrent-s3 src/main.cpp)
+add_executable (torrent-s3 src/main.cpp src/torrent_download.cpp src/hashlist.cpp)
 
 target_include_directories(torrent-s3 PRIVATE ${LibtorrentRasterbar_INCLUDE_DIR})
 target_link_libraries(torrent-s3 PRIVATE LibtorrentRasterbar::torrent-rasterbar)
