@@ -1,0 +1,27 @@
+#pragma once
+
+#include <libtorrent/torrent_info.hpp>
+
+#include "../s3/s3.hpp"
+#include "../deque/deque.hpp"
+
+class TorrentError : public std::runtime_error
+{
+public:
+  TorrentError(std::string message);
+};
+
+enum file_status_t {
+  WAITING,
+  DOWNLOADING,
+  COMPLETED
+};
+
+struct file_info_t {
+  unsigned long long size;
+  file_status_t status;
+};
+
+lt::torrent_info load_magnet_link_info(const std::string magnet_link);
+
+void download_torrent_files(const lt::add_torrent_params& params, std::vector<file_info_t> &files, ThreadSafeDeque<std::shared_ptr<S3TaskEvent>> &upload_files_queue, unsigned long long limit_size_bytes);

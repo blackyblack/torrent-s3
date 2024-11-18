@@ -2,7 +2,7 @@
 #include <cstdio>
 #include <cstdlib>
 
-#include "../include/hashlist.hpp"
+#include "./hashlist.hpp"
 
 StreamError::StreamError(std::string message) : std::runtime_error(message.c_str()) {}
 
