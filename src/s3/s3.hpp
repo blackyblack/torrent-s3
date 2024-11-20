@@ -1,6 +1,8 @@
 #pragma once
 
 #include <iostream>
+#include <vector>
+#include <thread>
 
 #include "../deque/deque.hpp"
 
@@ -34,4 +36,18 @@ public:
   S3Error(std::string message);
 };
 
-void s3_upload_task(ThreadSafeDeque<std::shared_ptr<S3TaskEvent>> &message_queue, const std::string &temporary_path);
+class S3Uploader {
+public:
+  // use default thread count (16) if thread_count is set to 0
+  S3Uploader(const std::string &temporary_path_, unsigned int thread_count_);
+
+  void start();
+  void stop();
+  void new_file(const std::string &file_name);
+private:
+  ThreadSafeDeque<std::shared_ptr<S3TaskEvent>> message_queue;
+  const std::string temporary_path;
+  unsigned int thread_count;
+
+  std::vector<std::thread> tasks;
+};

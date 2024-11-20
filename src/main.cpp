@@ -4,6 +4,7 @@
 #include <cstdlib>
 
 #include <libtorrent/add_torrent_params.hpp>
+#include <curl/curl.h>
 
 #include "./deque/deque.hpp"
 #include "./torrent/torrent_download.hpp"
@@ -16,6 +17,27 @@
 
 static void print_usage(const cxxopts::Options &options) {
   fprintf(stderr, options.help().c_str());
+}
+
+static bool download_file(const std::string &url, const std::string &save_to) {
+  auto curl = curl_easy_init();
+  if (curl == nullptr) {
+    fprintf(stderr, "Could not start Curl\n");
+    return false;
+  }
+
+  auto fp = fopen(save_to.c_str(), "wb");
+  curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
+  curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, NULL);
+  curl_easy_setopt(curl, CURLOPT_WRITEDATA, fp);
+  const auto res = curl_easy_perform(curl);
+  curl_easy_cleanup(curl);
+  fclose(fp);
+  if (res != CURLE_OK) {
+    fprintf(stderr, "Curl error: %s\n", curl_easy_strerror(res));
+    return false;
+  }
+  return true;
 }
 
 int main(int argc, char const* argv[])
@@ -129,6 +151,7 @@ int main(int argc, char const* argv[])
   }
 
   if (use_url) {
+    //download_file(source);
     fprintf(stderr, "Downloading torrents from URL is not currently supported\n");
     return EXIT_FAILURE;
   }
@@ -174,25 +197,20 @@ int main(int argc, char const* argv[])
     files.push_back(file_info_t { (unsigned long long) file_size, COMPLETED });
   }
 
-  ThreadSafeDeque<std::shared_ptr<S3TaskEvent>> upload_files_queue;
-
-  // use lambda to MSVC workaround
-  std::thread s3_task_handle([&](){ s3_upload_task(upload_files_queue, download_path); });
+  S3Uploader s3_uploader(download_path, 0);
+  s3_uploader.start();
 
   try {
-    download_torrent_files(torrent_params, files, upload_files_queue, limit_size_bytes);
+    download_torrent_files(torrent_params, files, s3_uploader, limit_size_bytes);
   }
   catch (TorrentError& e) {
     fprintf(stderr, "Error during downloading torrent files: %s\n", e.what());
     return EXIT_FAILURE;
   }
 
-  std::shared_ptr<S3TaskEvent> message = std::make_shared<S3TaskEventTerminate>();
-  upload_files_queue.push_back(std::move(message));
-
   fprintf(stdout, "Downloading torrent completed\n");
 
-  s3_task_handle.join();
+  s3_uploader.stop();
 
   for (const auto &f: hashlist) {
     if (new_hashlist.count(f.first) == 0) {

@@ -104,7 +104,7 @@ lt::torrent_info load_magnet_link_info(const std::string magnet_link) {
 	}
 }
 
-void download_torrent_files(const lt::add_torrent_params& params, std::vector<file_info_t> &files, ThreadSafeDeque<std::shared_ptr<S3TaskEvent>> &upload_files_queue, unsigned long long limit_size_bytes) {
+void download_torrent_files(const lt::add_torrent_params& params, std::vector<file_info_t> &files, S3Uploader &uploader, unsigned long long limit_size_bytes) {
   lt::add_torrent_params torrent_params(std::move(params));
   const int file_count = params.ti->num_files();
   auto to_download_indexes = next_downloadable_indexes(files, limit_size_bytes);
@@ -157,8 +157,7 @@ void download_torrent_files(const lt::add_torrent_params& params, std::vector<fi
         std::cout << "File #" << file_index + 1 << " completed" << std::endl;
 
         const auto file_name = h.torrent_file()->files().file_path((lt::file_index_t) file_index);
-        std::shared_ptr<S3TaskEvent> message = std::make_shared<S3TaskEventNewFile>(file_name);
-        upload_files_queue.push_back(std::move(message));
+        uploader.new_file(file_name);
 
         if (is_download_complete(files)) {
           download_completed = true;
