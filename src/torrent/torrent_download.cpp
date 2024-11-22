@@ -164,6 +164,8 @@ void download_torrent_files(const lt::add_torrent_params& params, std::vector<fi
           continue;
         }
 
+        // TODO: do not allow additional download till file is uploaded to S3
+
         // now we can allow additional downloads
         auto to_download_indexes = next_downloadable_indexes(files, limit_size_bytes);
         if (to_download_indexes.size() == 0) {

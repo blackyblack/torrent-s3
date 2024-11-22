@@ -4,6 +4,8 @@
 #include <vector>
 #include <thread>
 
+#include <miniocpp/client.h>
+
 #include "../deque/deque.hpp"
 
 enum message_type_t {
@@ -39,15 +41,27 @@ public:
 class S3Uploader {
 public:
   // use default thread count (16) if thread_count is set to 0
-  S3Uploader(const std::string &temporary_path_, unsigned int thread_count_);
+  // path_from_ - where to look for files to upload
+  // path_to_ - where to upload them
+  S3Uploader(const std::string &path_from_, unsigned int thread_count_, const std::string &url_, const std::string &access_key_, const std::string &secret_key_, const std::string &bucket_, const std::string &path_to_);
 
   void start();
   void stop();
   void new_file(const std::string &file_name);
+  void delete_file(const std::string &file_name);
 private:
   ThreadSafeDeque<std::shared_ptr<S3TaskEvent>> message_queue;
-  const std::string temporary_path;
+  const std::string path_from;
   unsigned int thread_count;
+
+  // S3 credentials
+  const std::string url;
+  const std::string access_key;
+  const std::string secret_key;
+  const std::string bucket;
+  const std::string path_to;
+  std::unique_ptr<minio::creds::Provider> provider;
+  std::unique_ptr<minio::s3::Client> client;
 
   std::vector<std::thread> tasks;
 };
