@@ -12,7 +12,7 @@ find_package(LibtorrentRasterbar REQUIRED)
 find_package(CURL REQUIRED)
 find_package(miniocpp REQUIRED)
 
-add_executable (torrent-s3 src/main.cpp src/torrent/torrent_download.cpp src/hashlist/hashlist.cpp src/s3/s3.cpp src/path_utils/path_utils.cpp src/curl/curl.cpp)
+add_executable (torrent-s3 src/main.cpp src/torrent/torrent_download.cpp src/hashlist/hashlist.cpp src/s3/s3.cpp src/curl/curl.cpp)
 
 target_include_directories(torrent-s3 PRIVATE ${CURL_INCLUDE_DIRS} ${LibtorrentRasterbar_INCLUDE_DIR} miniocpp::miniocpp)
 target_link_libraries(torrent-s3 PRIVATE ${CURL_LIBRARIES} LibtorrentRasterbar::torrent-rasterbar miniocpp::miniocpp)

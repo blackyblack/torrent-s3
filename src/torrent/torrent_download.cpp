@@ -26,7 +26,7 @@ static char const* state(lt::torrent_status::state_t s)
 
 static bool is_download_complete(const std::vector<file_info_t> &files) {
   for (const auto &f: files) {
-    if (f.status != COMPLETED) return false;
+    if (f.status != COMPLETED && f.status != S3_ERROR) return false;
   }
   return true;
 }
@@ -137,11 +137,42 @@ void download_torrent_files(const lt::add_torrent_params& params, std::vector<fi
   fprintf(stdout, "Downloading torrent\n");
 
   lt::torrent_handle h = session.add_torrent(torrent_params);
+  auto &s3_progress = uploader.get_progress_queue();
 
 	while (true) {
     if (download_completed) {
       break;
     }
+
+    // process S3 events before moving on to torrent events
+    while (true) {
+      if (s3_progress.empty()) {
+        break;
+      }
+
+      const auto s3_event = s3_progress.pop_front_waiting();
+      files[s3_event.file_index].status = s3_event.message_type == progress_type_t::UPLOAD_OK ? COMPLETED : S3_ERROR;
+
+      // check for completed downloads only on S3 events for optimization purpose
+      if (is_download_complete(files)) {
+        download_completed = true;
+      }
+
+      // now we can allow additional downloads
+      auto to_download_indexes = next_downloadable_indexes(files, limit_size_bytes);
+      if (to_download_indexes.size() == 0) {
+        continue;
+      }
+
+      auto file_priorities = h.get_file_priorities();
+      for (auto i: to_download_indexes) {
+        file_priorities[i] = libtorrent::default_priority;
+        files[i].status = DOWNLOADING;
+      }
+      h.prioritize_files(file_priorities);
+      break;
+    }
+  
 		std::vector<lt::alert*> alerts;
 		session.pop_alerts(&alerts);
 
@@ -153,31 +184,10 @@ void download_torrent_files(const lt::add_torrent_params& params, std::vector<fi
         auto event = lt::alert_cast<lt::file_completed_alert>(a);
         int file_index = (int) event->index;
 
-        files[file_index].status = COMPLETED;
-        std::cout << "File #" << file_index + 1 << " completed" << std::endl;
+        std::cout << "File #" << file_index + 1 << " downloaded" << std::endl;
 
         const auto file_name = h.torrent_file()->files().file_path((lt::file_index_t) file_index);
-        uploader.new_file(file_name);
-
-        if (is_download_complete(files)) {
-          download_completed = true;
-          continue;
-        }
-
-        // TODO: do not allow additional download till file is uploaded to S3
-
-        // now we can allow additional downloads
-        auto to_download_indexes = next_downloadable_indexes(files, limit_size_bytes);
-        if (to_download_indexes.size() == 0) {
-          continue;
-        }
-
-        auto file_priorities = h.get_file_priorities();
-        for (auto i: to_download_indexes) {
-          file_priorities[i] = libtorrent::default_priority;
-          files[i].status = DOWNLOADING;
-        }
-        h.prioritize_files(file_priorities);
+        uploader.new_file(file_name, file_index);
         continue;
 			}
 

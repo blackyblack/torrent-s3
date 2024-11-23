@@ -97,7 +97,7 @@ file_hashlist_t compare_hashlists(const file_hashlist_t& files, const lt::torren
 
   for (const auto &file_index: torrent.files().file_range()) {
     const auto file_size = torrent.files().file_size(file_index);
-    const auto file_name = torrent.files().file_name(file_index).to_string();
+    const auto file_name = torrent.files().file_path(file_index);
     hashlist_t loaded_file_hashes;
     if (files.count(file_name) > 0) {
       loaded_file_hashes = files.at(file_name);

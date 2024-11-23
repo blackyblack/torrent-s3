@@ -13,7 +13,6 @@
 #include "./hashlist/hashlist.hpp"
 #include "./command_line/cxxopts.hpp"
 #include "./s3/s3.hpp"
-#include "./path_utils/path_utils.hpp"
 #include "./curl/curl.hpp"
 
 #define FILE_HASHES_STORAGE_NAME ".torrent_s3_hashlist"
@@ -71,7 +70,7 @@ int main(int argc, char const* argv[]) {
   if (args.count("limit-size")) {
     limit_size_bytes = args["limit-size"].as<unsigned long long>();
   }
-  auto hashlist_path = path_join(download_path, FILE_HASHES_STORAGE_NAME);
+  auto hashlist_path = std::filesystem::path(download_path) / std::filesystem::path(FILE_HASHES_STORAGE_NAME);
   if (args.count("hashlist-file")) {
     hashlist_path = args["hashlist-file"].as<std::string>();
   }
@@ -186,17 +185,17 @@ int main(int argc, char const* argv[]) {
 
   file_hashlist_t hashlist;
   try {
-    hashlist = load_hashlist(hashlist_path);
+    hashlist = load_hashlist(hashlist_path.string());
   }
   catch (StreamError &e) {
-    fprintf(stderr, "Hashlist not found at %s. Creating new.\n", hashlist_path.c_str());
+    fprintf(stderr, "Hashlist not found at %s. Creating new.\n", hashlist_path.string().c_str());
   }
   const auto new_hashlist = compare_hashlists(hashlist, *torrent_params.ti);
 
   std::vector<file_info_t> files;
 
   for (const auto &file_index: torrent_params.ti->files().file_range()) {
-    const auto file_name = torrent_params.ti->files().file_name(file_index).to_string();
+    const auto file_name = torrent_params.ti->files().file_path(file_index);
     if (new_hashlist.count(file_name) == 0) {
       continue;
     }
@@ -260,6 +259,6 @@ int main(int argc, char const* argv[]) {
   }
 
   // save updated hashlist
-  save_hashlist(hashlist_path, new_hashlist);
+  save_hashlist(hashlist_path.string(), new_hashlist);
   return EXIT_SUCCESS;
 }

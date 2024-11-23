@@ -14,7 +14,8 @@ public:
 enum file_status_t {
   WAITING,
   DOWNLOADING,
-  COMPLETED
+  COMPLETED,
+  S3_ERROR,
 };
 
 struct file_info_t {
