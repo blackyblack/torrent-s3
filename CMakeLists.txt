@@ -14,7 +14,7 @@ find_package(miniocpp REQUIRED)
 
 add_executable (torrent-s3 src/main.cpp src/torrent/torrent_download.cpp src/hashlist/hashlist.cpp src/s3/s3.cpp src/curl/curl.cpp)
 
-target_include_directories(torrent-s3 PRIVATE ${CURL_INCLUDE_DIRS} ${LibtorrentRasterbar_INCLUDE_DIR} miniocpp::miniocpp)
+target_include_directories(torrent-s3 PRIVATE ${CURL_INCLUDE_DIRS} LibtorrentRasterbar::torrent-rasterbar miniocpp::miniocpp)
 target_link_libraries(torrent-s3 PRIVATE ${CURL_LIBRARIES} LibtorrentRasterbar::torrent-rasterbar miniocpp::miniocpp)
 
 add_definitions(-DCMAKE_PROJECT_NAME=${CMAKE_PROJECT_NAME})

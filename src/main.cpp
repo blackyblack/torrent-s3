@@ -24,7 +24,7 @@
 #define FILE_HASHES_STORAGE_NAME ".torrent_s3_hashlist"
 
 static void print_usage(const cxxopts::Options &options) {
-  fprintf(stderr, options.help().c_str());
+  fprintf(stderr, "%s", options.help().c_str());
 }
 
 static bool is_http_url(const std::string &url) {

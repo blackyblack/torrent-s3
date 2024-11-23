@@ -17,17 +17,16 @@
 TorrentError::TorrentError(std::string message) : std::runtime_error(message.c_str()) {}
 
 // return the name of a torrent status enum
-static char const* state(lt::torrent_status::state_t s)
-{
-	switch(s) {
-		case lt::torrent_status::checking_files: return "checking";
-		case lt::torrent_status::downloading_metadata: return "dl metadata";
-		case lt::torrent_status::downloading: return "downloading";
-		case lt::torrent_status::finished: return "finished";
-		case lt::torrent_status::seeding: return "seeding";
-		case lt::torrent_status::checking_resume_data: return "checking resume";
-		default: return "<>";
-	}
+static char const* state(lt::torrent_status::state_t s) {
+  switch(s) {
+    case lt::torrent_status::checking_files: return "checking";
+    case lt::torrent_status::downloading_metadata: return "dl metadata";
+    case lt::torrent_status::downloading: return "downloading";
+    case lt::torrent_status::finished: return "finished";
+    case lt::torrent_status::seeding: return "seeding";
+    case lt::torrent_status::checking_resume_data: return "checking resume";
+    default: return "<>";
+  }
 }
 
 static bool is_download_complete(const std::vector<file_info_t> &files) {
@@ -69,15 +68,14 @@ lt::torrent_info load_magnet_link_info(const std::string magnet_link) {
   auto magnet_params = lt::parse_magnet_uri(magnet_link);
   magnet_params.save_path = ".";
   magnet_params.flags |= lt::torrent_flags::default_dont_download;
-  lt::session magnet_session;
-  lt::settings_pack p;
-  p.set_int(lt::settings_pack::alert_mask, lt::alert::error_notification | lt::alert::status_notification);
-  magnet_session.apply_settings(p);
-
-  lt::torrent_handle h = magnet_session.add_torrent(magnet_params);
   unsigned int stale_download_retries = 0;
 
   while(true) {
+    lt::session magnet_session;
+    lt::settings_pack p;
+    p.set_int(lt::settings_pack::alert_mask, lt::alert::error_notification | lt::alert::status_notification);
+    magnet_session.apply_settings(p);
+    lt::torrent_handle h = magnet_session.add_torrent(magnet_params);
     std::time_t stale_timeout_start = std::time(0);
 
     while (true) {
@@ -119,7 +117,7 @@ lt::torrent_info load_magnet_link_info(const std::string magnet_link) {
       std::time_t stale_timeout_end = std::time(0);
 
       if (stale_timeout_end >= stale_timeout_start + STALE_TIMEOUT_SECONDS) {
-        fprintf(stderr, "Stale magnet link info. Retrying...");
+        fprintf(stderr, "Stale magnet link info. Retrying...\n");
         break;
       }
     }
@@ -129,7 +127,7 @@ lt::torrent_info load_magnet_link_info(const std::string magnet_link) {
     if (stale_download_retries > STALE_RETRIES) {
       throw TorrentError("Stale magnet link metadata");
     }
-    h.force_recheck();
+    magnet_session.abort();
   }
 }
 

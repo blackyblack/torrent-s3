@@ -4,7 +4,52 @@ Downloads files from torrent and saves to S3 storage. Allows to use limited inte
 
 # Installation
 
-TODO
+## Windows
+
+Get binaries from the Gihub [Releases](https://github.com/blackyblack/torrent-s3/releases)
+
+## Linux
+
+- Install libraries
+
+  ```sh
+  sudo apt install curl zip unzip tar
+  ```
+
+- Install [vcpkg](https://github.com/microsoft/vcpkg)
+
+  ```sh
+  git clone https://github.com/microsoft/vcpkg.git
+  cd vcpkg
+  ./bootstrap-vcpkg.sh
+  VCPKG_ROOT=$(pwd)
+  ```
+
+- Install [minio-cpp](https://github.com/minio/minio-cpp)
+
+  ```sh
+  ./vcpkg install minio-cpp
+  ```
+
+- Install [libtorrent](https://libtorrent.org/index.html)
+
+  ```sh
+  ./vcpkg install libtorrent
+  ```
+
+- Download torrent-s3 source
+
+  ```sh
+  git clone https://github.com/blackyblack/torrent-s3.git
+  cd ./torrent-s3
+  ```
+
+- Build torrent-s3
+
+  ```sh
+  cmake . -B ./build/Debug -DCMAKE_BUILD_TYPE=Debug -DCMAKE_TOOLCHAIN_FILE=${VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake
+  cmake --build ./build/Debug
+  ```
 
 # Command line parameters
 
