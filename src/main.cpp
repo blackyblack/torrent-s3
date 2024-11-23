@@ -15,6 +15,12 @@
 #include "./s3/s3.hpp"
 #include "./curl/curl.hpp"
 
+#define STRING(x) #x
+#define XSTRING(x) STRING(x)
+
+#define APP_NAME XSTRING(CMAKE_PROJECT_NAME)
+#define APP_VERSION XSTRING(CMAKE_PROJECT_VERSION)
+
 #define FILE_HASHES_STORAGE_NAME ".torrent_s3_hashlist"
 
 static void print_usage(const cxxopts::Options &options) {
@@ -27,7 +33,7 @@ static bool is_http_url(const std::string &url) {
 }
 
 int main(int argc, char const* argv[]) {
-  cxxopts::Options options("torrent-s3");
+  cxxopts::Options options(APP_NAME);
 
   options.add_options()
       ("t,torrent", "Torrent file path, HTTP URL or magnet link", cxxopts::value<std::string>())
@@ -39,6 +45,7 @@ int main(int argc, char const* argv[]) {
       ("d,download-path", "Temporary directory for downloaded files", cxxopts::value<std::string>())
       ("l,limit-size", "Temporary directory maximum size in bytes", cxxopts::value<unsigned long long>())
       ("p,hashlist-file", std::string("Path to hashlist. Default is <download-path>/") + std::string(FILE_HASHES_STORAGE_NAME), cxxopts::value<std::string>())
+      ("v,version", "Show version")
       ("h,help", "Show help");
   
   cxxopts::ParseResult args;
@@ -46,13 +53,18 @@ int main(int argc, char const* argv[]) {
   try {
     args = options.parse(argc, argv);
   } catch (const cxxopts::exceptions::exception &x) {
-    fprintf(stderr, "torrent-s3: %s\n", x.what());
+    fprintf(stderr, "%s: %s\n", APP_NAME, x.what());
     print_usage(options);
     return EXIT_FAILURE;
   }
 
   if (args.count("help")) {
     print_usage(options);
+    return EXIT_SUCCESS;
+  }
+
+  if (args.count("version")) {
+    fprintf(stderr, "%s: %s\n", APP_NAME, APP_VERSION);
     return EXIT_SUCCESS;
   }
 
@@ -233,8 +245,9 @@ int main(int argc, char const* argv[]) {
     return EXIT_FAILURE;
   }
 
+  std::vector<file_error_info_t> file_errors;
   try {
-    download_torrent_files(torrent_params, files, s3_uploader, limit_size_bytes);
+    file_errors = download_torrent_files(torrent_params, files, s3_uploader, limit_size_bytes);
   }
   catch (TorrentError& e) {
     fprintf(stderr, "Error during downloading torrent files: %s\n", e.what());
@@ -256,6 +269,13 @@ int main(int argc, char const* argv[]) {
         fprintf(stderr, "Could not delete file \"%s\" from S3. Error: %s\n", f.first.c_str(), e.what());
       }
     }
+  }
+
+  // note, that files with errors are removed from new hashlist after comparing with old
+  // hashlist. This way we won't try to delete failed files from S3
+  for (const auto &f : file_errors) {
+    const auto file_name = torrent_params.ti->files().file_path((lt::file_index_t) f.file_index);
+    hashlist.erase(file_name);
   }
 
   // save updated hashlist

@@ -1,4 +1,5 @@
 #include <iostream>
+#include <ctime>
 
 #include <libtorrent/session.hpp>
 #include <libtorrent/add_torrent_params.hpp>
@@ -7,6 +8,11 @@
 #include <libtorrent/alert_types.hpp>
 
 #include "./torrent_download.hpp"
+
+// Workaround for stale torrent metadata. Will retry if no new peers found in STALE_TIMEOUT_SECONDS period.
+#define STALE_TIMEOUT_SECONDS 60
+// Up to STALE_RETRIES for stale torrent metadata.
+#define STALE_RETRIES 5
 
 TorrentError::TorrentError(std::string message) : std::runtime_error(message.c_str()) {}
 
@@ -59,7 +65,7 @@ static std::vector<int> next_downloadable_indexes(const std::vector<file_info_t>
   return to_download_file_indexes;
 }
 
-lt::torrent_info load_magnet_link_info(const std::string magnet_link) {
+lt::torrent_info load_magnet_link_info(const std::string magnet_link) {  
   auto magnet_params = lt::parse_magnet_uri(magnet_link);
   magnet_params.save_path = ".";
   magnet_params.flags |= lt::torrent_flags::default_dont_download;
@@ -67,47 +73,76 @@ lt::torrent_info load_magnet_link_info(const std::string magnet_link) {
   lt::settings_pack p;
   p.set_int(lt::settings_pack::alert_mask, lt::alert::error_notification | lt::alert::status_notification);
   magnet_session.apply_settings(p);
+
   lt::torrent_handle h = magnet_session.add_torrent(magnet_params);
+  unsigned int stale_download_retries = 0;
 
-  while (true) {
-		std::vector<lt::alert*> alerts;
-		magnet_session.pop_alerts(&alerts);
+  while(true) {
+    std::time_t stale_timeout_start = std::time(0);
 
-		for (const auto a : alerts) {
-      if (lt::alert_cast<lt::torrent_finished_alert>(a)) {
-				return *h.torrent_file();
-			}
+    while (true) {
+      std::vector<lt::alert*> alerts;
+      magnet_session.pop_alerts(&alerts);
 
-			if (lt::alert_cast<lt::torrent_error_alert>(a)) {
-        throw TorrentError(a->message());
-			}
+      for (const auto a : alerts) {
+        if (lt::alert_cast<lt::torrent_finished_alert>(a)) {
+          return *h.torrent_file();
+        }
 
-			if (auto st = lt::alert_cast<lt::state_update_alert>(a)) {
-				if (st->status.empty()) continue;
+        if (lt::alert_cast<lt::torrent_error_alert>(a)) {
+          throw TorrentError(a->message());
+        }
 
-				// we only have a single torrent, so we know which one
-				// the status is for
-				lt::torrent_status const& s = st->status[0];
-				std::cout << "\r" << state(s.state) << " "
-					<< (s.download_payload_rate / 1000) << " kB/s "
-					<< (s.total_done / 1000) << " kB ("
-					<< (s.progress_ppm / 10000) << "%) downloaded ("
-					<< s.num_peers << " peers)\x1b[K" << std::endl;
-				std::cout.flush();
-			}
-		}
-		std::this_thread::sleep_for(std::chrono::milliseconds(200));
+        if (auto st = lt::alert_cast<lt::state_update_alert>(a)) {
+          if (st->status.empty()) continue;
 
-		// ask the session to post a state_update_alert, to update our
-		// state output for the torrent
-		magnet_session.post_torrent_updates();
-	}
+          // we only have a single torrent, so we know which one the status is for
+          lt::torrent_status const& s = st->status[0];
+          std::cout << "\r" << state(s.state) << " "
+            << (s.download_payload_rate / 1000) << " kB/s "
+            << (s.total_done / 1000) << " kB ("
+            << (s.progress_ppm / 10000) << "%) downloaded ("
+            << s.num_peers << " peers)\x1b[K" << std::endl;
+          std::cout.flush();
+
+          if (s.num_peers > 0) {
+            stale_timeout_start = std::time(0);
+          }
+        }
+      }
+      std::this_thread::sleep_for(std::chrono::milliseconds(200));
+
+      // ask the session to post a state_update_alert, to update our
+      // state output for the torrent
+      magnet_session.post_torrent_updates();
+
+      std::time_t stale_timeout_end = std::time(0);
+
+      if (stale_timeout_end >= stale_timeout_start + STALE_TIMEOUT_SECONDS) {
+        fprintf(stderr, "Stale magnet link info. Retrying...");
+        break;
+      }
+    }
+
+    // Try to restart magnet link metadata download
+    stale_download_retries++;
+    if (stale_download_retries > STALE_RETRIES) {
+      throw TorrentError("Stale magnet link metadata");
+    }
+    h.force_recheck();
+  }
 }
 
-void download_torrent_files(const lt::add_torrent_params& params, std::vector<file_info_t> &files, S3Uploader &uploader, unsigned long long limit_size_bytes) {
+std::vector<file_error_info_t> download_torrent_files(
+  const lt::add_torrent_params& params,
+  std::vector<file_info_t> &files,
+  S3Uploader &uploader,
+  unsigned long long limit_size_bytes
+) {
   lt::add_torrent_params torrent_params(std::move(params));
   const int file_count = params.ti->num_files();
   auto to_download_indexes = next_downloadable_indexes(files, limit_size_bytes);
+  std::vector<file_error_info_t> file_errors;
 
   // only download files, that are in 'file_indexes'
   std::vector<lt::download_priority_t> file_priorities(file_count, libtorrent::dont_download);
@@ -126,7 +161,7 @@ void download_torrent_files(const lt::add_torrent_params& params, std::vector<fi
   }
 
   if (download_completed || file_count == 0) {
-    return;
+    return file_errors;
   }
 
   lt::session session;
@@ -152,6 +187,10 @@ void download_torrent_files(const lt::add_torrent_params& params, std::vector<fi
 
       const auto s3_event = s3_progress.pop_front_waiting();
       files[s3_event.file_index].status = s3_event.message_type == progress_type_t::UPLOAD_OK ? COMPLETED : S3_ERROR;
+
+      if (s3_event.message_type == progress_type_t::UPLOAD_ERROR) {
+        file_errors.push_back(file_error_info_t {s3_event.file_index, s3_event.error});
+      }
 
       // check for completed downloads only on S3 events for optimization purpose
       if (is_download_complete(files)) {
@@ -207,4 +246,5 @@ void download_torrent_files(const lt::add_torrent_params& params, std::vector<fi
 		// state output for the torrent
 		session.post_torrent_updates();
 	}
+  return file_errors;
 }

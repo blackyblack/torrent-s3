@@ -23,6 +23,12 @@ struct file_info_t {
   file_status_t status;
 };
 
+struct file_error_info_t {
+  unsigned int file_index;
+  std::string error;
+};
+
 lt::torrent_info load_magnet_link_info(const std::string magnet_link);
 
-void download_torrent_files(const lt::add_torrent_params& params, std::vector<file_info_t> &files, S3Uploader &uploader, unsigned long long limit_size_bytes);
+// returns vector of files that couldn't upload to S3
+std::vector<file_error_info_t> download_torrent_files(const lt::add_torrent_params& params, std::vector<file_info_t> &files, S3Uploader &uploader, unsigned long long limit_size_bytes);

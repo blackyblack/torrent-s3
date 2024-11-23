@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.16.3)
 
-project(torrent-s3)
+project(torrent-s3 VERSION 1.0.0)
 
 set(CMAKE_CXX_STANDARD 17)
 
@@ -16,3 +16,6 @@ add_executable (torrent-s3 src/main.cpp src/torrent/torrent_download.cpp src/has
 
 target_include_directories(torrent-s3 PRIVATE ${CURL_INCLUDE_DIRS} ${LibtorrentRasterbar_INCLUDE_DIR} miniocpp::miniocpp)
 target_link_libraries(torrent-s3 PRIVATE ${CURL_LIBRARIES} LibtorrentRasterbar::torrent-rasterbar miniocpp::miniocpp)
+
+add_definitions(-DCMAKE_PROJECT_NAME=${CMAKE_PROJECT_NAME})
+add_definitions(-DCMAKE_PROJECT_VERSION=${CMAKE_PROJECT_VERSION})
