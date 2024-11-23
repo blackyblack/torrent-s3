@@ -56,8 +56,10 @@ Get binaries from the Gihub [Releases](https://github.com/blackyblack/torrent-s3
 1. `--help` or `-h` - Display help screen;
 2. `--version` or `-v` - Display version;
 3. `--torrent` or `-t` - Torrent file or magnet link to sync with S3;
+> [!NOTE]
+> Magnet link or HTTP URL might contain special symbols. Put Torrent link in double quotes (`"`) in this case.
 
-    Torrent magnet link example: `./torrent-s3 --torrent=magnet:?xt=urn:btih:01FF5A2C8261D32B2F83007ECA4C5A94EFA66EC3`
+    Torrent magnet link example: `./torrent-s3 --torrent="magnet:?xt=urn:btih:01FF5A2C8261D32B2F83007ECA4C5A94EFA66EC3"`
 
     Torrent file example: `./torrent-s3 --torrent=./1.torrent`
 
