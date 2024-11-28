@@ -5,6 +5,7 @@
 #include <libtorrent/add_torrent_params.hpp>
 #include <libtorrent/torrent_handle.hpp>
 #include <libtorrent/magnet_uri.hpp>
+#include <libtorrent/alert.hpp>
 #include <libtorrent/alert_types.hpp>
 
 #include "./torrent_download.hpp"
@@ -73,7 +74,7 @@ lt::torrent_info load_magnet_link_info(const std::string magnet_link) {
   while(true) {
     lt::session magnet_session;
     lt::settings_pack p;
-    p.set_int(lt::settings_pack::alert_mask, lt::alert::error_notification | lt::alert::status_notification);
+    p.set_int(lt::settings_pack::alert_mask, lt::alert_category::error | lt::alert_category::status);
     magnet_session.apply_settings(p);
     lt::torrent_handle h = magnet_session.add_torrent(magnet_params);
     std::time_t stale_timeout_start = std::time(0);
@@ -164,7 +165,7 @@ std::vector<file_error_info_t> download_torrent_files(
 
   lt::session session;
   lt::settings_pack p;
-  p.set_int(lt::settings_pack::alert_mask, lt::alert::error_notification | lt::alert::status_notification | lt::alert::file_progress_notification);
+  p.set_int(lt::settings_pack::alert_mask, lt::alert_category::error | lt::alert_category::status | lt::alert_category::file_progress);
   session.apply_settings(p);
 
   fprintf(stdout, "Downloading torrent\n");

@@ -280,5 +280,7 @@ int main(int argc, char const* argv[]) {
 
   // save updated hashlist
   save_hashlist(hashlist_path.string(), new_hashlist);
+
+  fprintf(stdout, "Torrent-S3 sync completed\n");
   return EXIT_SUCCESS;
 }

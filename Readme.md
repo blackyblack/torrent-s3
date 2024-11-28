@@ -51,6 +51,10 @@ Get binaries from the Gihub [Releases](https://github.com/blackyblack/torrent-s3
   cmake --build ./build/Debug
   ```
 
+## Docker
+
+Run image from [here](https://hub.docker.com/repository/docker/blackyblacky/torrent-s3/general)
+
 # Command line parameters
 
 1. `--help` or `-h` - Display help screen;
