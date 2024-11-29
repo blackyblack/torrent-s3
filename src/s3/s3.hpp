@@ -64,6 +64,7 @@ public:
     const std::string &access_key_,
     const std::string &secret_key_,
     const std::string &bucket_,
+    const std::string &region_,
     const std::string &path_to_
   );
 
@@ -84,6 +85,7 @@ private:
   const std::string access_key;
   const std::string secret_key;
   const std::string bucket;
+  const std::string region;
   const std::string path_to;
   std::unique_ptr<minio::creds::Provider> provider;
   std::unique_ptr<minio::s3::Client> client;

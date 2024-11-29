@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.16.3)
 
-project(torrent-s3 VERSION 1.0.2)
+project(torrent-s3 VERSION 1.0.3)
 
 set(CMAKE_CXX_STANDARD 17)
 

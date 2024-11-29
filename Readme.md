@@ -74,25 +74,28 @@ Run image from [here](https://hub.docker.com/repository/docker/blackyblacky/torr
 5. `--s3-bucket` or `-b` - S3 bucket;
 
     S3 bucket example: `./torrent-s3 --s3-bucket=asiatrip`
-6. `--s3-upload-path` or `-u` - S3 upload path. If upload path is not set, files are stored in the root of the S3 bucket;
+6. `--s3-region` or `-r` - S3 region;
+
+    S3 region example: `./torrent-s3 --s3-region=ru-central-1`
+7. `--s3-upload-path` or `-u` - S3 upload path. If upload path is not set, files are stored in the root of the S3 bucket;
 
     S3 upload path example: `./torrent-s3 --s3-upload-path=upload`
-7. `--s3-access-key` or `-a` - S3 access key;
+8. `--s3-access-key` or `-a` - S3 access key;
 
     S3 access key example: `./torrent-s3 --access-key=Q3AM3UQ867SPQQA43P2F`
-8. `--s3-secret-key` or `-k` - S3 secret key;
+9. `--s3-secret-key` or `-k` - S3 secret key;
 
     S3 secret key example: `./torrent-s3 --s3-secret-key=zuf+tfteSlswRu7BJ86wekitnifILbZam1KYY3TG`
-9. `--download-path` or `-d` - Path for temporary file storage. Files are stored in the current directory, if not set;
+10. `--download-path` or `-d` - Path for temporary file storage. Files are stored in the current directory, if not set;
 
     Download path example: `./torrent-s3 --download-path=download`
-10. `--limit-size` or `-l` - Temporary file storage maximum size in bytes. Unlimited if not set;
+11. `--limit-size` or `-l` - Temporary file storage maximum size in bytes. Unlimited if not set;
 > [!NOTE]
 > Temporary storage can become slightly larger than specified limit. Large files will be downloaded to temporary storage disregard
 > the limit.
 
     Limit size example: `./torrent-s3 --limit-size=50000000`
-11. `--hashlist-file` or `-p` - Path for hashlist file storage. Hashlist is stored in `.torrent_s3_hashlist`, if not set;
+12. `--hashlist-file` or `-p` - Path for hashlist file storage. Hashlist is stored in `.torrent_s3_hashlist`, if not set;
 > [!NOTE]
 > Hashlist allows to track torrent contents modifications. New files are synced with S3 and deleted files are removed from S3.
 

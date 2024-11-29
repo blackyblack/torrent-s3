@@ -39,6 +39,7 @@ int main(int argc, char const* argv[]) {
       ("t,torrent", "Torrent file path, HTTP URL or magnet link", cxxopts::value<std::string>())
       ("s,s3-url", "S3 service URL", cxxopts::value<std::string>())
       ("b,s3-bucket", "S3 bucket", cxxopts::value<std::string>())
+      ("r,s3-region", "S3 region", cxxopts::value<std::string>())
       ("u,s3-upload-path", "S3 path to store uploaded files", cxxopts::value<std::string>())
       ("a,s3-access-key", "S3 access key", cxxopts::value<std::string>())
       ("k,s3-secret-key", "S3 secret key", cxxopts::value<std::string>())
@@ -148,6 +149,11 @@ int main(int argc, char const* argv[]) {
     upload_path = args["s3-upload-path"].as<std::string>();
   }
 
+  std::string s3_region = "";
+  if (args.count("s3-region")) {
+    s3_region = args["s3-region"].as<std::string>();
+  }
+
   fprintf(stdout, "Torrent-S3 starting\n");
 
   if (limit_size_bytes == LLONG_MAX) {
@@ -236,7 +242,7 @@ int main(int argc, char const* argv[]) {
     files.push_back(file_info_t { (unsigned long long) file_size, COMPLETED });
   }
 
-  S3Uploader s3_uploader(download_path, 0, s3_url, s3_access_key, s3_secret_key, s3_bucket, upload_path);
+  S3Uploader s3_uploader(download_path, 0, s3_url, s3_access_key, s3_secret_key, s3_bucket, s3_region, upload_path);
   try {
     s3_uploader.start();
   }
