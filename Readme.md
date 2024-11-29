@@ -69,6 +69,8 @@ Run image from [here](https://hub.docker.com/repository/docker/blackyblacky/torr
 
     Torrent HTTP URL example: `./torrent-s3 --torrent=https://webtorrent.io/torrents/big-buck-bunny.torrent`
 4. `--s3-url` or `-s` - S3 service URL;
+> [!NOTE]
+> S3 URL should not contain bucket or region.
 
     S3 URL example: `./torrent-s3 --s3-url=play.min.io`
 5. `--s3-bucket` or `-b` - S3 bucket;
