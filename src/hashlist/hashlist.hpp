@@ -1,18 +1,28 @@
 #pragma once
 
 #include <unordered_map>
+#include <unordered_set>
 
 #include <libtorrent/torrent_info.hpp>
 
-typedef std::vector<char> hashstr_t;
-typedef std::vector<hashstr_t> hashlist_t;
+struct hashlist_t {
+    // hash of each piece of a file - stored in .torrent file
+    std::vector<std::string> hashes;
+    // list of files that should be updated if parent file is modified, i.e.
+    // files contained in archive parent file
+    std::vector<std::string> linked_files;
+};
+
+// key - file name
+// value - hashes of file pieces and linked file names
 typedef std::unordered_map<std::string, hashlist_t> file_hashlist_t;
 
-class StreamError : public std::runtime_error
-{
-public:
-  StreamError(std::string message);
+class StreamError : public std::runtime_error {
+  public:
+    StreamError(std::string message);
 };
+
+file_hashlist_t create_hashlist(const lt::torrent_info &torrent, const std::unordered_map<std::string, std::vector<std::string>> &linked_files);
 
 std::ostream& serialize(file_hashlist_t& files, std::ostream& os);
 
@@ -22,4 +32,6 @@ file_hashlist_t load_hashlist(std::string path);
 
 void save_hashlist(std::string path, const file_hashlist_t& files);
 
-file_hashlist_t compare_hashlists(const file_hashlist_t& files, const lt::torrent_info &torrent);
+std::unordered_set<std::string> get_updated_files(const file_hashlist_t& files, const lt::torrent_info &torrent);
+
+std::unordered_set<std::string> get_removed_files(const file_hashlist_t& files, const lt::torrent_info &torrent);

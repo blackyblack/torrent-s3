@@ -1,34 +1,65 @@
 #pragma once
 
 #include <libtorrent/torrent_info.hpp>
-
-#include "../s3/s3.hpp"
 #include "../deque/deque.hpp"
 
-class TorrentError : public std::runtime_error
-{
-public:
-  TorrentError(std::string message);
-};
-
-enum file_status_t {
-  WAITING,
-  DOWNLOADING,
-  COMPLETED,
-  S3_ERROR,
-};
-
-struct file_info_t {
-  unsigned long long size;
-  file_status_t status;
-};
-
-struct file_error_info_t {
-  unsigned int file_index;
-  std::string error;
+class TorrentError : public std::runtime_error {
+  public:
+    TorrentError(std::string message);
 };
 
 lt::torrent_info load_magnet_link_info(const std::string magnet_link);
 
-// returns vector of files that couldn't upload to S3
-std::vector<file_error_info_t> download_torrent_files(const lt::add_torrent_params& params, std::vector<file_info_t> &files, S3Uploader &uploader, unsigned long long limit_size_bytes);
+enum torrent_message_type_t {
+    NEW_FILE,
+    TERMINATE,
+};
+
+class TorrentTaskEvent {
+  public:
+    virtual torrent_message_type_t message_type() = 0;
+};
+
+class TorrentTaskEventTerminate : public TorrentTaskEvent {
+  public:
+    torrent_message_type_t message_type();
+};
+
+class TorrentTaskEventNewFile : public TorrentTaskEvent {
+  private:
+    std::string file_name;
+  public:
+    TorrentTaskEventNewFile(std::string name);
+    torrent_message_type_t message_type();
+    std::string get_name();
+};
+
+enum torrent_progress_type_t {
+    DOWNLOAD_OK,
+    DOWNLOAD_ERROR,
+};
+
+struct TorrentProgressEvent {
+    torrent_progress_type_t message_type;
+    std::string file_name;
+    unsigned int file_index;
+    std::string error;
+};
+
+class TorrentDownloader {
+  public:
+    TorrentDownloader(const lt::add_torrent_params& params);
+
+    void start();
+    void stop();
+
+    // progress_queue allows to receive notifications on download progress
+    ThreadSafeDeque<TorrentProgressEvent> &get_progress_queue();
+    void download_files(const std::vector<std::string> &files);
+  private:
+    std::thread task;
+    lt::add_torrent_params torrent_params;
+
+    ThreadSafeDeque<std::shared_ptr<TorrentTaskEvent>> message_queue;
+    ThreadSafeDeque<TorrentProgressEvent> progress_queue;
+};
