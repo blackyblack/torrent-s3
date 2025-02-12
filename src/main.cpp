@@ -16,6 +16,8 @@
 #include "./s3/s3.hpp"
 #include "./curl/curl.hpp"
 #include "./archive/archive.hpp"
+#include "./linked_files/linked_files.hpp"
+#include "./downloading_files/downloading_files.hpp"
 
 #define STRING(x) #x
 #define XSTRING(x) STRING(x)
@@ -37,54 +39,6 @@ static void print_usage(const cxxopts::Options &options) {
 static bool is_http_url(const std::string &url) {
     std::regex url_regex(R"(^(https?:\/\/)?([\da-z\.-]+)\.([a-z\.]{2,6})([\/\w \.-]*)*\/?$)");
     return std::regex_match(url, url_regex);
-}
-
-static std::vector<std::string> next_downloadable_files(const std::unordered_set<std::string> &all_files, const std::unordered_set<std::string> &completed_files, const std::unordered_set<std::string> &downloading_files, const lt::torrent_info &torrent, unsigned long long size_limit_bytes) {
-    unsigned long long total_size = 0;
-    for (const auto &file_index: torrent.files().file_range()) {
-        const auto file_size = torrent.files().file_size(file_index);
-        const auto file_name = torrent.files().file_path(file_index);
-
-        if (all_files.find(file_name) == all_files.end()) {
-            continue;
-        }
-        if (completed_files.find(file_name) != completed_files.end()) {
-            continue;
-        }
-        if (downloading_files.find(file_name) != downloading_files.end()) {
-            total_size += file_size;
-        }
-    }
-
-    std::vector<std::string> to_download_files;
-    int first_uncompleted_index = -1;
-    for (const auto &file_index: torrent.files().file_range()) {
-        const auto file_size = torrent.files().file_size(file_index);
-        const auto file_name = torrent.files().file_path(file_index);
-
-        if (all_files.find(file_name) == all_files.end()) {
-            continue;
-        }
-        if (completed_files.find(file_name) != completed_files.end()) {
-            continue;
-        }
-        if (downloading_files.find(file_name) != downloading_files.end()) {
-            continue;
-        }
-        if (first_uncompleted_index < 0) first_uncompleted_index = (int) file_index;
-        if (total_size + file_size > size_limit_bytes) {
-            continue;
-        }
-        to_download_files.push_back(file_name);
-        total_size += file_size;
-    }
-
-    // if no file fits a size limit, add first available file and download one by one
-    if (total_size == 0 && first_uncompleted_index >= 0) {
-        const auto file_name = torrent.files().file_path(lt::file_index_t{first_uncompleted_index});
-        to_download_files.push_back(file_name);
-    }
-    return to_download_files;
 }
 
 int main(int argc, char const* argv[]) {
@@ -277,61 +231,86 @@ int main(int argc, char const* argv[]) {
         return EXIT_FAILURE;
     }
 
-    auto new_files = get_updated_files(hashlist, *torrent_params.ti);
-    auto downloading_files_list = next_downloadable_files(new_files, {}, {}, *torrent_params.ti, limit_size_bytes);
-    std::unordered_set<std::string> completed_files;
-    std::unordered_set<std::string> downloading_files(downloading_files_list.begin(), downloading_files_list.end());
+    const auto new_files_set = get_updated_files(hashlist, *torrent_params.ti);
+    std::vector new_files(new_files_set.begin(), new_files_set.end());
+    DownloadingFiles downloading_files(*torrent_params.ti, new_files, limit_size_bytes);
+    const auto next_chunk = downloading_files.download_next_chunk();
+    LinkedFiles linked_files;
+    LinkedFiles unfinished_files;
 
     TorrentDownloader torrent_downloader(torrent_params);
     torrent_downloader.start();
-    torrent_downloader.download_files(downloading_files_list);
+    torrent_downloader.download_files(next_chunk);
 
     auto &download_progress = torrent_downloader.get_progress_queue();
     auto &upload_progress = s3_uploader.get_progress_queue();
     std::vector<file_upload_error_t> file_errors;
-    bool download_completed = downloading_files.empty();
+    bool download_completed = next_chunk.empty();
+    unsigned int unfinished_uploads = 0;
     while(true) {
+        if (download_completed && unfinished_uploads == 0) break;
         while (!download_progress.empty()) {
             const auto torrent_event = download_progress.pop_front_waiting();
-            if (torrent_event.message_type == torrent_progress_type_t::DOWNLOAD_ERROR) {
-                fprintf(stderr, "Error during downloading torrent files: %s\n", torrent_event.error.c_str());
+            if (std::holds_alternative<TorrentProgressDownloadError>(torrent_event)) {
+                const auto torrent_error = std::get<TorrentProgressDownloadError>(torrent_event);
+                fprintf(stderr, "Error during downloading torrent files: %s\n", torrent_error.error.c_str());
                 torrent_downloader.stop();
-                s3_uploader.stop();
-                return EXIT_FAILURE;
+                download_completed = true;
+                continue;
             }
+            const auto torrent_file_downloaded = std::get<TorrentProgressDownloadOk>(torrent_event);
             // TODO: unpack archived file before uploading and add to linked files
-            s3_uploader.new_file(torrent_event.file_name, torrent_event.file_index);
+            std::vector<std::string> linked_file_names;
+            // upload parent file if linked files are empty
+            if (linked_file_names.empty()) {
+                unfinished_uploads++;
+                s3_uploader.new_file(torrent_file_downloaded.file_name);
+                continue;
+            }
+            // upload linked files
+            linked_files.add_files(torrent_file_downloaded.file_name, linked_file_names);
+            unfinished_files.add_files(torrent_file_downloaded.file_name, linked_file_names);
+            for (const auto &f: linked_file_names) {
+                unfinished_uploads++;
+                s3_uploader.new_file(f);
+            }
             continue;
         }
         while (!upload_progress.empty()) {
             const auto s3_event = upload_progress.pop_front_waiting();
-            if (s3_event.message_type == s3_progress_type_t::UPLOAD_ERROR) {
-                fprintf(stderr, "Error during uploading files to S3: %s\n", s3_event.error.c_str());
-                file_errors.push_back(file_upload_error_t {s3_event.file_name, s3_event.error});
+            unfinished_uploads--;
+            if (std::holds_alternative<S3ProgressUploadError>(s3_event)) {
+                const auto s3_error = std::get<S3ProgressUploadError>(s3_event);
+                fprintf(stderr, "Error during uploading files to S3: %s\n", s3_error.error.c_str());
+                file_errors.push_back(file_upload_error_t { s3_error.file_name, s3_error.error });
                 continue;
             }
+            const auto s3_file_uploaded = std::get<S3ProgressUploadOk>(s3_event);
+            // populate parent file name, if any
+            std::string parent_file_name;
+            {
+                const auto parent = unfinished_files.get_parent(s3_file_uploaded.file_name);
+                if (parent.has_value()) {
+                    parent_file_name = parent.value();
+                } else {
+                    parent_file_name = s3_file_uploaded.file_name;
+                }
+                unfinished_files.remove_child(s3_file_uploaded.file_name);
+            }
+            // if parent is still not completed, keep uploading
+            const auto parent = unfinished_files.get_parent(s3_file_uploaded.file_name);
+            if (parent.has_value()) {
+                continue;
+            }
+            downloading_files.completed_file(parent_file_name);
+            if (download_completed) continue;
             // check for completed downloads only on S3 events for optimization purpose
-            auto file_to_erase = new_files.find(s3_event.file_name);
-            if (file_to_erase != new_files.end()) {
-                new_files.erase(file_to_erase);
-            }
-            if (new_files.size() == 0) {
+            const auto next_chunk = downloading_files.download_next_chunk();
+            if (next_chunk.empty()) {
                 download_completed = true;
-            }
-
-            completed_files.insert(s3_event.file_name);
-            file_to_erase = downloading_files.find(s3_event.file_name);
-            if (file_to_erase != downloading_files.end()) {
-                downloading_files.erase(file_to_erase);
-            }
-            auto next_downloading_files_chunk = next_downloadable_files(new_files, completed_files, downloading_files, *torrent_params.ti, limit_size_bytes);
-            if (next_downloading_files_chunk.size() == 0) {
                 continue;
             }
-            for (const auto &f : next_downloading_files_chunk) {
-                downloading_files.insert(f);
-            }
-            torrent_downloader.download_files(next_downloading_files_chunk);
+            torrent_downloader.download_files(next_chunk);
         }
     }
 
@@ -371,8 +350,7 @@ int main(int argc, char const* argv[]) {
     }
 
     // save updated hashlist
-    // TODO: generate linked files for archives
-    const auto new_hashlist = create_hashlist(*torrent_params.ti, {});
+    const auto new_hashlist = create_hashlist(*torrent_params.ti, linked_files.get_files());
     save_hashlist(hashlist_path.string(), new_hashlist);
 
     fprintf(stdout, "Torrent-S3 sync completed\n");

@@ -12,24 +12,6 @@
 
 S3Error::S3Error(std::string message) : std::runtime_error(message.c_str()) {}
 
-s3_message_type_t S3TaskEventTerminate::message_type() {
-    return S3_TERMINATE;
-}
-
-S3TaskEventNewFile::S3TaskEventNewFile(std::string name, unsigned int file_index_) : file_name {name}, file_index {file_index_} {}
-
-s3_message_type_t S3TaskEventNewFile::message_type() {
-    return S3_NEW_FILE;
-}
-
-std::string S3TaskEventNewFile::get_name() {
-    return file_name;
-}
-
-unsigned int S3TaskEventNewFile::get_index() {
-    return file_index;
-}
-
 S3Uploader::S3Uploader(
     const std::string &path_from_,
     unsigned int thread_count_,
@@ -127,7 +109,7 @@ static void s3_upload_task(
     const std::string &bucket,
     const std::string &region,
     const std::string &path_to,
-    ThreadSafeDeque<std::shared_ptr<S3TaskEvent>> &message_queue,
+    ThreadSafeDeque<S3TaskEvent> &message_queue,
     const std::string &temporary_path,
     unsigned int task_index
 ) {
@@ -138,28 +120,27 @@ static void s3_upload_task(
     minio::s3::Client client(base_url, &provider);
 
     while (true) {
-        auto event = message_queue.pop_front_waiting();
-        if (event == nullptr) continue;
-        if (event->message_type() == S3_TERMINATE) {
+        const auto event = message_queue.pop_front_waiting();
+        if (std::holds_alternative<S3TaskEventTerminate>(event)) {
             break;
         }
-        const auto file_event = std::dynamic_pointer_cast<S3TaskEventNewFile>(event);
-        auto filename = std::filesystem::path(temporary_path) / std::filesystem::path(file_event->get_name());
+        const auto file_event = std::get<S3TaskEventNewFile>(event);
+        auto filename = std::filesystem::path(temporary_path) / std::filesystem::path(file_event.file_name);
         fprintf(stdout, "[Task %u] Uploading %s\n", task_index + 1, filename.string().c_str());
-        const auto save_to_filename = std::filesystem::path(path_to) / std::filesystem::path(file_event->get_name());
+        const auto save_to_filename = std::filesystem::path(path_to) / std::filesystem::path(file_event.file_name);
         bool uploaded = false;
         try {
             write_file_s3(filename.string(), client, bucket, region, save_to_filename.string());
             uploaded = true;
         } catch (S3Error &e) {
             fprintf(stderr, "[Task %u] Could not upload file \"%s\"\n", task_index + 1, filename.string().c_str());
-            progress_queue.push_back(S3ProgressEvent {UPLOAD_ERROR, file_event->get_name(), file_event->get_index(), e.what()});
+            progress_queue.push_back(S3ProgressUploadError { filename.string(), e.what() });
         }
         fprintf(stdout, "[Task %u] Deleting %s\n", task_index + 1, filename.string().c_str());
         std::remove(filename.string().c_str());
 
         if (uploaded) {
-            progress_queue.push_back(S3ProgressEvent {UPLOAD_OK, file_event->get_name(), file_event->get_index(), ""});
+            progress_queue.push_back(S3ProgressUploadOk { file_event.file_name });
         }
     }
 
@@ -213,9 +194,8 @@ void S3Uploader::start() {
 }
 
 void S3Uploader::stop() {
-    std::shared_ptr<S3TaskEvent> message = std::make_shared<S3TaskEventTerminate>();
     for (auto i = 0; i < tasks.size(); i++) {
-        message_queue.push_back(message);
+        message_queue.push_back(S3TaskEventTerminate {});
     }
     for (auto &t : tasks) {
         t.join();
@@ -227,9 +207,8 @@ ThreadSafeDeque<S3ProgressEvent> &S3Uploader::get_progress_queue() {
     return progress_queue;
 }
 
-void S3Uploader::new_file(const std::string &file_name, unsigned int file_index) {
-    std::shared_ptr<S3TaskEvent> message = std::make_shared<S3TaskEventNewFile>(file_name, file_index);
-    message_queue.push_back(std::move(message));
+void S3Uploader::new_file(const std::string &file_name) {
+    message_queue.push_back(S3TaskEventNewFile { file_name });
 }
 
 void S3Uploader::delete_file(const std::string &file_name) {
