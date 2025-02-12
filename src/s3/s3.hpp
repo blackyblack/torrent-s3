@@ -3,48 +3,30 @@
 #include <iostream>
 #include <vector>
 #include <thread>
+#include <variant>
 
 #include <miniocpp/client.h>
 
 #include "../deque/deque.hpp"
 
-enum s3_message_type_t {
-    S3_NEW_FILE,
-    S3_TERMINATE,
-};
+struct S3TaskEventTerminate {};
 
-class S3TaskEvent {
-  public:
-    virtual s3_message_type_t message_type() = 0;
-};
-
-class S3TaskEventTerminate : public S3TaskEvent {
-  public:
-    s3_message_type_t message_type();
-};
-
-class S3TaskEventNewFile : public S3TaskEvent {
-  private:
+struct S3TaskEventNewFile {
     std::string file_name;
-    unsigned int file_index;
-  public:
-    S3TaskEventNewFile(std::string name, unsigned int file_index_);
-    s3_message_type_t message_type();
-    std::string get_name();
-    unsigned int get_index();
 };
 
-enum s3_progress_type_t {
-    UPLOAD_OK,
-    UPLOAD_ERROR,
-};
+typedef std::variant<S3TaskEventTerminate, S3TaskEventNewFile> S3TaskEvent;
 
-struct S3ProgressEvent {
-    s3_progress_type_t message_type;
+struct S3ProgressUploadOk {
     std::string file_name;
-    unsigned int file_index;
+};
+
+struct S3ProgressUploadError {
+    std::string file_name;
     std::string error;
 };
+
+typedef std::variant<S3ProgressUploadOk, S3ProgressUploadError> S3ProgressEvent;
 
 class S3Error : public std::runtime_error {
   public:
@@ -71,10 +53,10 @@ class S3Uploader {
     void stop();
     // progress_queue allows to receive notifications on upload progress
     ThreadSafeDeque<S3ProgressEvent> &get_progress_queue();
-    void new_file(const std::string &file_name, unsigned int file_index);
+    void new_file(const std::string &file_name);
     void delete_file(const std::string &file_name);
   private:
-    ThreadSafeDeque<std::shared_ptr<S3TaskEvent>> message_queue;
+    ThreadSafeDeque<S3TaskEvent> message_queue;
     ThreadSafeDeque<S3ProgressEvent> progress_queue;
     const std::string path_from;
     unsigned int thread_count;
