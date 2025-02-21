@@ -1,21 +1,9 @@
 #include <filesystem>
 #include <gtest/gtest.h>
 
+#include "./test_utils.hpp"
+
 #include "../src/archive/archive.hpp"
-
-#define STRING(x) #x
-#define XSTRING(x) STRING(x)
-
-#define APP_NAME XSTRING(CMAKE_PROJECT_NAME)
-#define SOURCE_DIR XSTRING(CMAKE_SOURCE_DIR)
-
-std::string get_asset(std::string file) {
-    return (std::filesystem::path(SOURCE_DIR) / std::filesystem::path("test/assets") / std::filesystem::path(file)).string();
-}
-
-std::string get_tmp_dir() {
-    return std::string("./tmp-") + APP_NAME;
-}
 
 TEST(archive_test, is_packed) {
     EXPECT_FALSE(is_packed(get_asset("1.txt")));

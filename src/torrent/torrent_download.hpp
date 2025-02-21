@@ -1,6 +1,7 @@
 #pragma once
 
 #include <variant>
+#include <libtorrent/add_torrent_params.hpp>
 #include <libtorrent/torrent_info.hpp>
 #include "../deque/deque.hpp"
 
