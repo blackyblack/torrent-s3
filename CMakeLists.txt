@@ -45,6 +45,7 @@ add_executable(
     test/archive_test.cpp
     test/curl_test.cpp
     test/torrent_test.cpp
+    test/s3_test.cpp
 )
 
 target_include_directories(${PROJECT_NAME}-test PRIVATE ${APP_INCLUDES})

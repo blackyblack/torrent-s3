@@ -36,10 +36,8 @@ class S3Error : public std::runtime_error {
 class S3Uploader {
   public:
     // use default thread count (16) if thread_count is set to 0
-    // path_from_ - where to look for files to upload
     // path_to_ - where to upload them
     S3Uploader(
-        const std::string &path_from_,
         unsigned int thread_count_,
         const std::string &url_,
         const std::string &access_key_,
@@ -58,7 +56,6 @@ class S3Uploader {
   private:
     ThreadSafeDeque<S3TaskEvent> message_queue;
     ThreadSafeDeque<S3ProgressEvent> progress_queue;
-    const std::string path_from;
     unsigned int thread_count;
 
     // S3 credentials

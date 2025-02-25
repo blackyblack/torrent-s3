@@ -223,7 +223,7 @@ int main(int argc, char const* argv[]) {
         fprintf(stderr, "Hashlist not found at %s. Creating new.\n", hashlist_path.string().c_str());
     }
 
-    S3Uploader s3_uploader(download_path, 0, s3_url, s3_access_key, s3_secret_key, s3_bucket, s3_region, upload_path);
+    S3Uploader s3_uploader(0, s3_url, s3_access_key, s3_secret_key, s3_bucket, s3_region, upload_path);
     try {
         s3_uploader.start();
     } catch (S3Error& e) {
@@ -259,17 +259,18 @@ int main(int argc, char const* argv[]) {
                 continue;
             }
             const auto torrent_file_downloaded = std::get<TorrentProgressDownloadOk>(torrent_event);
+            const auto file_name = (std::filesystem::path(download_path) / torrent_file_downloaded.file_name).string();
             // TODO: unpack archived file before uploading and add to linked files
             std::vector<std::string> linked_file_names;
             // upload parent file if linked files are empty
             if (linked_file_names.empty()) {
                 unfinished_uploads++;
-                s3_uploader.new_file(torrent_file_downloaded.file_name);
+                s3_uploader.new_file(file_name);
                 continue;
             }
             // upload linked files
-            linked_files.add_files(torrent_file_downloaded.file_name, linked_file_names);
-            unfinished_files.add_files(torrent_file_downloaded.file_name, linked_file_names);
+            linked_files.add_files(file_name, linked_file_names);
+            unfinished_files.add_files(file_name, linked_file_names);
             for (const auto &f: linked_file_names) {
                 unfinished_uploads++;
                 s3_uploader.new_file(f);
@@ -286,6 +287,11 @@ int main(int argc, char const* argv[]) {
                 continue;
             }
             const auto s3_file_uploaded = std::get<S3ProgressUploadOk>(s3_event);
+            
+            // upload completed - erase file
+            fprintf(stdout, "Deleting %s\n", s3_file_uploaded.file_name.c_str());
+            std::remove(s3_file_uploaded.file_name.c_str());
+
             // populate parent file name, if any
             std::string parent_file_name;
             {
