@@ -1,9 +1,9 @@
 #pragma once
 
-#include <iostream>
 #include <vector>
 #include <thread>
 #include <variant>
+#include <optional>
 
 #include <miniocpp/client.h>
 
@@ -28,11 +28,6 @@ struct S3ProgressUploadError {
 
 typedef std::variant<S3ProgressUploadOk, S3ProgressUploadError> S3ProgressEvent;
 
-class S3Error : public std::runtime_error {
-  public:
-    S3Error(std::string message);
-};
-
 class S3Uploader {
   public:
     // use default thread count (16) if thread_count is set to 0
@@ -47,12 +42,12 @@ class S3Uploader {
         const std::string &path_to_
     );
 
-    void start();
+    std::optional<std::string> start();
     void stop();
     // progress_queue allows to receive notifications on upload progress
     ThreadSafeDeque<S3ProgressEvent> &get_progress_queue();
     void new_file(const std::string &file_name);
-    void delete_file(const std::string &file_name);
+    std::optional<std::string> delete_file(const std::string &file_name);
   private:
     ThreadSafeDeque<S3TaskEvent> message_queue;
     ThreadSafeDeque<S3ProgressEvent> progress_queue;

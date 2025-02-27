@@ -1,13 +1,8 @@
 #pragma once
 
-#include <stdexcept>
 #include <string>
 #include <vector>
-
-class ArchiveError : public std::runtime_error {
-  public:
-    ArchiveError(std::string message);
-};
+#include <variant>
 
 struct file_unpack_info_t {
     std::string name;
@@ -16,4 +11,4 @@ struct file_unpack_info_t {
 
 bool is_packed(std::string file_name);
 
-std::vector<file_unpack_info_t> unpack_file(std::string file_name, std::string output_directory);
+std::variant<std::vector<file_unpack_info_t>, std::string> unpack_file(std::string file_name, std::string output_directory);

@@ -6,8 +6,6 @@
 
 #define READ_BLOCK_SIZE 10240
 
-ArchiveError::ArchiveError(std::string message) : std::runtime_error(message.c_str()) {}
-
 static inline bool ends_with(std::string const &value, std::string const &ending) {
     if (ending.size() > value.size()) return false;
     return std::equal(ending.rbegin(), ending.rend(), value.rbegin());
@@ -48,7 +46,7 @@ bool is_packed(std::string file_name) {
     return ret == ARCHIVE_OK;
 }
 
-std::vector<file_unpack_info_t> unpack_file(std::string file_name, std::string output_directory) {
+std::variant<std::vector<file_unpack_info_t>, std::string> unpack_file(std::string file_name, std::string output_directory) {
     std::vector<file_unpack_info_t> unpacked_files;
     archive *arch = archive_read_new();
     archive_read_support_format_7zip(arch);
@@ -60,7 +58,7 @@ std::vector<file_unpack_info_t> unpack_file(std::string file_name, std::string o
     if (ret != ARCHIVE_OK) {
         archive_read_close(arch);
         archive_read_free(arch);
-        throw ArchiveError("Failed to open archive \"" + file_name + "\"");
+        return std::string("Failed to open archive \"") + file_name + "\"";
     }
     archive *write_file = archive_write_disk_new();
     archive_write_disk_set_options(write_file, 0);

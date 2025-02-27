@@ -12,10 +12,9 @@
 
 #define RANDOM_FILE_NAME_LENGTH 16
 
-#define RETRIES 7
+#define RETRIES 5
 #define INITIAL_DELAY_SECONDS 5
-
-S3Error::S3Error(std::string message) : std::runtime_error(message.c_str()) {}
+#define MAX_DELAY_SECONDS 60
 
 S3Uploader::S3Uploader(
     unsigned int thread_count_,
@@ -54,7 +53,7 @@ static std::string gen_random(const int len) {
     return tmp_s;
 }
 
-static void write_stream_s3(std::istream &stream, unsigned long content_size, minio::s3::Client &client, const std::string &bucket, const std::string &region, const std::string &path) {
+static std::optional<std::string> write_stream_s3(std::istream &stream, unsigned long content_size, minio::s3::Client &client, const std::string &bucket, const std::string &region, const std::string &path) {
     minio::s3::PutObjectArgs args(stream, content_size, 0);
     args.bucket = bucket;
     args.object = path;
@@ -63,7 +62,9 @@ static void write_stream_s3(std::istream &stream, unsigned long content_size, mi
     }
 
     std::string error = "Retry limit reached";
-    const auto result = backoffxx::attempt(backoffxx::make_exponential(std::chrono::seconds(INITIAL_DELAY_SECONDS), RETRIES), [&] {
+    const auto result = backoffxx::attempt(backoffxx::make_exponential(std::chrono::seconds(INITIAL_DELAY_SECONDS), RETRIES, std::chrono::seconds(MAX_DELAY_SECONDS)), [&] {
+        args.stream.clear();
+        args.stream.seekg(0);
         const auto resp = client.PutObject(args);
         if (!resp) {
             // throttling - make retry
@@ -77,28 +78,29 @@ static void write_stream_s3(std::istream &stream, unsigned long content_size, mi
     });
 
     if (!result.ok()) {
-        throw S3Error(error);
+        return error;
     }
+    return std::nullopt;
 }
 
-static void write_content_to_file_s3(const std::string &content, minio::s3::Client &client, const std::string &bucket, const std::string &region, const std::string &path) {
+static std::optional<std::string> write_content_to_file_s3(const std::string &content, minio::s3::Client &client, const std::string &bucket, const std::string &region, const std::string &path) {
     const auto content_size = content.size();
     std::stringstream stream(content);
-    write_stream_s3(stream, content_size, client, bucket, region, path);
+    return write_stream_s3(stream, content_size, client, bucket, region, path);
 }
 
-static void write_file_s3(const std::string &file_path, minio::s3::Client &client, const std::string &bucket, const std::string &region, const std::string &path) {
+static std::optional<std::string> write_file_s3(const std::string &file_path, minio::s3::Client &client, const std::string &bucket, const std::string &region, const std::string &path) {
     std::ifstream file_stream(file_path, std::ios::binary);
     unsigned long file_size;
     try {
         file_size = std::filesystem::file_size(std::filesystem::path(file_path));
     } catch (const std::filesystem::filesystem_error& e) {
-        throw S3Error(e.what());
+        return e.what();
     }
-    write_stream_s3(file_stream, file_size, client, bucket, region, path);
+    return write_stream_s3(file_stream, file_size, client, bucket, region, path);
 }
 
-static void delete_file_s3(minio::s3::Client &client, const std::string &bucket, const std::string &region, const std::string &path) {
+static std::optional<std::string> delete_file_s3(minio::s3::Client &client, const std::string &bucket, const std::string &region, const std::string &path) {
     minio::s3::RemoveObjectArgs args;
     args.bucket = bucket;
     args.object = path;
@@ -107,7 +109,7 @@ static void delete_file_s3(minio::s3::Client &client, const std::string &bucket,
     }
 
     std::string error = "Retry limit reached";
-    const auto result = backoffxx::attempt(backoffxx::make_exponential(std::chrono::seconds(INITIAL_DELAY_SECONDS), RETRIES), [&] {
+    const auto result = backoffxx::attempt(backoffxx::make_exponential(std::chrono::seconds(INITIAL_DELAY_SECONDS), RETRIES, std::chrono::seconds(MAX_DELAY_SECONDS)), [&] {
         const auto resp = client.RemoveObject(args);
         if (!resp) {
             // throttling - make retry
@@ -121,11 +123,12 @@ static void delete_file_s3(minio::s3::Client &client, const std::string &bucket,
     });
 
     if (!result.ok()) {
-        throw S3Error(error);
+        return error;
     }
+    return std::nullopt;
 }
 
-static bool exists_bucket_s3(minio::s3::Client &client, const std::string &bucket, const std::string &region) {
+static std::variant<bool, std::string> exists_bucket_s3(minio::s3::Client &client, const std::string &bucket, const std::string &region) {
     minio::s3::BucketExistsArgs args;
     args.bucket = bucket;
     if (!region.empty()) {
@@ -134,7 +137,7 @@ static bool exists_bucket_s3(minio::s3::Client &client, const std::string &bucke
 
     std::string error = "Retry limit reached";
     bool exists;
-    const auto result = backoffxx::attempt(backoffxx::make_exponential(std::chrono::seconds(INITIAL_DELAY_SECONDS), RETRIES), [&] {
+    const auto result = backoffxx::attempt(backoffxx::make_exponential(std::chrono::seconds(INITIAL_DELAY_SECONDS), RETRIES, std::chrono::seconds(MAX_DELAY_SECONDS)), [&] {
         const auto resp = client.BucketExists(args);
         if (!resp) {
             // throttling - make retry
@@ -151,7 +154,7 @@ static bool exists_bucket_s3(minio::s3::Client &client, const std::string &bucke
     });
 
     if (!result.ok()) {
-        throw S3Error(error);
+        return error;
     }
 
     return exists;
@@ -183,41 +186,39 @@ static void s3_upload_task(
         auto filename = std::filesystem::path(file_event.file_name).string();
         fprintf(stdout, "[Task %u] Uploading %s\n", task_index + 1, filename.c_str());
         const auto save_to_filename = std::filesystem::path(path_to) / std::filesystem::path(file_event.file_name);
-        bool uploaded = false;
-        try {
-            write_file_s3(filename, client, bucket, region, save_to_filename.string());
-            uploaded = true;
-        } catch (S3Error &e) {
-            fprintf(stderr, "[Task %u] Could not upload file \"%s\"\n", task_index + 1, filename.c_str());
-            progress_queue.push_back(S3ProgressUploadError { filename, e.what() });
+        const auto ret = write_file_s3(filename, client, bucket, region, save_to_filename.string());
+        if (ret.has_value()) {
+            fprintf(stderr, "[Task %u] Could not upload file \"%s\". Error %s\n", task_index + 1, filename.c_str(), ret.value().c_str());
+            progress_queue.push_back(S3ProgressUploadError { filename, ret.value() });
+            continue;
         }
-
-        if (uploaded) {
-            progress_queue.push_back(S3ProgressUploadOk { file_event.file_name });
-        }
+        progress_queue.push_back(S3ProgressUploadOk { file_event.file_name });
     }
 
     fprintf(stdout, "S3 upload task #%u completed\n", task_index + 1);
 }
 
-void S3Uploader::start() {
-    if (!exists_bucket_s3(*client, bucket, region)) {
-        throw S3Error(std::string("Bucket \"") + bucket + std::string("\" does not exist"));
+std::optional<std::string> S3Uploader::start() {
+    const auto exists_variant = exists_bucket_s3(*client, bucket, region);
+    if (std::holds_alternative<std::string>(exists_variant)) {
+        return std::get<std::string>(exists_variant);
+    }
+    const auto exists = std::get<bool>(exists_variant);
+    if (!exists) {
+        return std::string("Bucket \"") + bucket + std::string("\" does not exist");
     }
 
     std::string empty_file;
     const auto file_name = gen_random(RANDOM_FILE_NAME_LENGTH);
     const auto save_to_filename = std::filesystem::path(path_to) / std::filesystem::path(file_name);
-    try {
-        write_content_to_file_s3(empty_file, *client, bucket, region, save_to_filename.string());
-    } catch (S3Error &e) {
-        throw S3Error(std::string("Could not write to bucket \"") + bucket + std::string("\". Error: ") + std::string(e.what()));
+    const auto write_option = write_content_to_file_s3(empty_file, *client, bucket, region, save_to_filename.string());
+    if (write_option.has_value()) {
+        return std::string("Could not write to bucket \"") + bucket + std::string("\". Error: ") + write_option.value();
     }
 
-    try {
-        delete_file_s3(*client, bucket, region, save_to_filename.string());
-    } catch (S3Error &e) {
-        throw S3Error(std::string("Could not delete from bucket \"") + bucket + std::string("\". Error: ") + std::string(e.what()));
+    const auto delete_option = delete_file_s3(*client, bucket, region, save_to_filename.string());
+    if (delete_option.has_value()) {
+        return std::string("Could not delete from bucket \"") + bucket + std::string("\". Error: ") + delete_option.value();
     }
 
     tasks.clear();
@@ -228,6 +229,7 @@ void S3Uploader::start() {
         });
         tasks.push_back(std::move(task));
     }
+    return std::nullopt;
 }
 
 void S3Uploader::stop() {
@@ -248,7 +250,7 @@ void S3Uploader::new_file(const std::string &file_name) {
     message_queue.push_back(S3TaskEventNewFile { file_name });
 }
 
-void S3Uploader::delete_file(const std::string &file_name) {
+std::optional<std::string> S3Uploader::delete_file(const std::string &file_name) {
     const auto delete_filename = std::filesystem::path(path_to) / std::filesystem::path(file_name);
-    delete_file_s3(*client, bucket, region, delete_filename.string());
+    return delete_file_s3(*client, bucket, region, delete_filename.string());
 }

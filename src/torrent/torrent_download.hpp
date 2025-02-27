@@ -5,12 +5,7 @@
 #include <libtorrent/torrent_info.hpp>
 #include "../deque/deque.hpp"
 
-class TorrentError : public std::runtime_error {
-  public:
-    TorrentError(std::string message);
-};
-
-lt::torrent_info load_magnet_link_info(const std::string magnet_link);
+std::variant<lt::torrent_info, std::string> load_magnet_link_info(const std::string magnet_link);
 
 struct TorrentTaskEventTerminate {};
 

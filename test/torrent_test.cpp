@@ -26,7 +26,8 @@ TEST(torrent_test, no_files) {
 
 
 TEST(torrent_test, magnet_link) {
-    const auto torrent_info = load_magnet_link_info("magnet:?xt=urn:btih:01FF5A2C8261D32B2F83007ECA4C5A94EFA66EC3");
+    const auto ret = load_magnet_link_info("magnet:?xt=urn:btih:01FF5A2C8261D32B2F83007ECA4C5A94EFA66EC3");
+    const auto torrent_info = std::get<lt::torrent_info>(ret);
     EXPECT_EQ(torrent_info.num_files(), 15);
 }
 

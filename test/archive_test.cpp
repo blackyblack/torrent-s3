@@ -15,33 +15,43 @@ TEST(archive_test, is_packed) {
 }
 
 TEST(archive_test, unpack_no_file) {
-    EXPECT_THROW(unpack_file(get_asset("0.txt"), get_tmp_dir()), ArchiveError);
+    const auto ret = unpack_file(get_asset("0.txt"), get_tmp_dir());
+    EXPECT_TRUE(std::holds_alternative<std::string>(ret));
 }
 
 TEST(archive_test, unpack_fail) {
-    EXPECT_THROW(unpack_file(get_asset("1.txt"), get_tmp_dir()), ArchiveError);
+    const auto ret = unpack_file(get_asset("1.txt"), get_tmp_dir());
+    EXPECT_TRUE(std::holds_alternative<std::string>(ret));
 }
 
 TEST(archive_test, unpack_zip) {
     const auto ret = unpack_file(get_asset("1.zip"), get_tmp_dir());
-    EXPECT_EQ(ret.size(), 1);
+    EXPECT_TRUE(std::holds_alternative<std::vector<file_unpack_info_t>>(ret));
+    const auto files = std::get<std::vector<file_unpack_info_t>>(ret);
+    EXPECT_EQ(files.size(), 1);
     std::filesystem::remove_all(get_tmp_dir());
 }
 
 TEST(archive_test, unpack_rar) {
     const auto ret = unpack_file(get_asset("1.rar"), get_tmp_dir());
-    EXPECT_EQ(ret.size(), 1);
+    EXPECT_TRUE(std::holds_alternative<std::vector<file_unpack_info_t>>(ret));
+    const auto files = std::get<std::vector<file_unpack_info_t>>(ret);
+    EXPECT_EQ(files.size(), 1);
     std::filesystem::remove_all(get_tmp_dir());
 }
 
 TEST(archive_test, unpack_rar4) {
     const auto ret = unpack_file(get_asset("2.rar"), get_tmp_dir());
-    EXPECT_EQ(ret.size(), 1);
+    EXPECT_TRUE(std::holds_alternative<std::vector<file_unpack_info_t>>(ret));
+    const auto files = std::get<std::vector<file_unpack_info_t>>(ret);
+    EXPECT_EQ(files.size(), 1);
     std::filesystem::remove_all(get_tmp_dir());
 }
 
 TEST(archive_test, unpack_zip_multi) {
     const auto ret = unpack_file(get_asset("3.zip"), get_tmp_dir());
-    EXPECT_EQ(ret.size(), 2);
+    EXPECT_TRUE(std::holds_alternative<std::vector<file_unpack_info_t>>(ret));
+    const auto files = std::get<std::vector<file_unpack_info_t>>(ret);
+    EXPECT_EQ(files.size(), 2);
     std::filesystem::remove_all(get_tmp_dir());
 }

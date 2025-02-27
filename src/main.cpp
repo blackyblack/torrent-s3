@@ -186,13 +186,13 @@ int main(int argc, char const* argv[]) {
     try {
         if (use_magnet) {
             fprintf(stdout, "Loading magnet link metadata\n");
-            try {
-                auto ti = load_magnet_link_info(torrent_url);
-                torrent_params.ti = std::make_shared<lt::torrent_info>(ti);
-            } catch (TorrentError& e) {
-                fprintf(stderr, "Error during downloading magnet link info: %s\n", e.what());
+            const auto magnet_link_ret = load_magnet_link_info(torrent_url);
+            if (std::holds_alternative<std::string>(magnet_link_ret)) {
+                fprintf(stderr, "Failed to load magnet link metadata: %s\n", std::get<std::string>(magnet_link_ret).c_str());
                 return EXIT_FAILURE;
             }
+            const auto ti = std::get<lt::torrent_info>(magnet_link_ret);
+            torrent_params.ti = std::make_shared<lt::torrent_info>(ti);
         }
         if (!use_url && !use_magnet) {
             torrent_params.ti = std::make_shared<lt::torrent_info>(torrent_url);
@@ -204,16 +204,12 @@ int main(int argc, char const* argv[]) {
 
     if (use_url) {
         fprintf(stdout, "Downloading torrent from %s\n", torrent_url.c_str());
-        try {
-            const auto torrent_content = download_torrent_info(torrent_url);
-            torrent_params.ti = std::make_shared<lt::torrent_info>(torrent_content);
-        } catch (DownloadError &e) {
-            fprintf(stderr, "Failed to download torrent info. Exiting.\n");
-            return EXIT_FAILURE;
-        } catch (ParseError &e) {
-            fprintf(stderr, "Failed to parse torrent info. Exiting.\n");
+        const auto torrent_content_ret = download_torrent_info(torrent_url);
+        if (std::holds_alternative<std::string>(torrent_content_ret)) {
+            fprintf(stderr, "Failed to download torrent info: %s\n", std::get<std::string>(torrent_content_ret).c_str());
             return EXIT_FAILURE;
         }
+        torrent_params.ti = std::make_shared<lt::torrent_info>(std::get<lt::torrent_info>(torrent_content_ret));
     }
 
     file_hashlist_t hashlist;
@@ -224,10 +220,9 @@ int main(int argc, char const* argv[]) {
     }
 
     S3Uploader s3_uploader(0, s3_url, s3_access_key, s3_secret_key, s3_bucket, s3_region, upload_path);
-    try {
-        s3_uploader.start();
-    } catch (S3Error& e) {
-        fprintf(stderr, "Could not start S3 uploader. Error:\n%s\n", e.what());
+    const auto s3_start_ret = s3_uploader.start();
+    if (s3_start_ret.has_value()) {
+        fprintf(stderr, "Could not start S3 uploader. Error:\n%s\n", s3_start_ret.value().c_str());
         return EXIT_FAILURE;
     }
 
@@ -337,21 +332,16 @@ int main(int argc, char const* argv[]) {
         if (hashlist[f].linked_files.size() > 0) {
             // This file is a parent file - remove linked files
             for (const auto &linked_file: hashlist[f].linked_files) {
-                try {
-                    s3_uploader.delete_file(linked_file);
-                    fprintf(stdout, "File \"%s\" was deleted. Remove from S3\n", linked_file.c_str());
-                } catch (S3Error &e) {
-                    fprintf(stderr, "Could not delete file \"%s\" from S3. Error: %s\n", linked_file.c_str(), e.what());
+                const auto delete_file_ret = s3_uploader.delete_file(linked_file);
+                if (delete_file_ret.has_value()) {
+                    fprintf(stderr, "Could not delete file \"%s\" from S3. Error: %s\n", linked_file.c_str(), delete_file_ret.value().c_str());
                 }
             }
-            continue;
         }
         // This file was deleted - remove from S3
-        try {
-            s3_uploader.delete_file(f);
-            fprintf(stdout, "File \"%s\" was deleted. Remove from S3\n", f.c_str());
-        } catch (S3Error &e) {
-            fprintf(stderr, "Could not delete file \"%s\" from S3. Error: %s\n", f.c_str(), e.what());
+        const auto delete_file_ret = s3_uploader.delete_file(f);
+        if (delete_file_ret.has_value()) {
+            fprintf(stderr, "Could not delete file \"%s\" from S3. Error: %s\n", f.c_str(), delete_file_ret.value().c_str());
         }
     }
 

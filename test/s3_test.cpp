@@ -9,14 +9,16 @@
 
 TEST(s3_test, start_stop) {
     S3Uploader uploader(1, "http://play.min.io", "Q3AM3UQ867SPQQA43P2F", "zuf+tfteSlswRu7BJ86wekitnifILbZam1KYY3TG", "asiatrip", "", "");
-    uploader.start();
+    const auto ret = uploader.start();
+    EXPECT_TRUE(!ret.has_value());
     uploader.stop();
 }
 
 TEST(s3_test, bad_file) {
     S3Uploader uploader(1, "http://play.min.io", "Q3AM3UQ867SPQQA43P2F", "zuf+tfteSlswRu7BJ86wekitnifILbZam1KYY3TG", "asiatrip", "", "");
     auto &progress_queue = uploader.get_progress_queue();
-    uploader.start();
+    const auto ret = uploader.start();
+    EXPECT_TRUE(!ret.has_value());
     EXPECT_TRUE(progress_queue.empty());
     const auto nonexisting_file = get_asset("nonexisting_file");
     uploader.new_file(nonexisting_file);
@@ -31,7 +33,8 @@ TEST(s3_test, bad_file) {
 TEST(s3_test, parallel_files) {
     S3Uploader uploader(4, "http://play.min.io", "Q3AM3UQ867SPQQA43P2F", "zuf+tfteSlswRu7BJ86wekitnifILbZam1KYY3TG", "asiatrip", "", "");
     auto &progress_queue = uploader.get_progress_queue();
-    uploader.start();
+    const auto ret = uploader.start();
+    EXPECT_TRUE(!ret.has_value());
     EXPECT_TRUE(progress_queue.empty());
     for (int i = 0; i < 4; i++) {
         uploader.new_file(get_asset("1.txt"));

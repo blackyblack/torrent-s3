@@ -15,8 +15,6 @@
 // Up to STALE_RETRIES for stale torrent metadata.
 #define STALE_RETRIES 5
 
-TorrentError::TorrentError(std::string message) : std::runtime_error(message.c_str()) {}
-
 // return the name of a torrent status enum
 static char const* state(lt::torrent_status::state_t s) {
     switch(s) {
@@ -37,7 +35,7 @@ static char const* state(lt::torrent_status::state_t s) {
     }
 }
 
-lt::torrent_info load_magnet_link_info(const std::string magnet_link) {
+std::variant<lt::torrent_info, std::string> load_magnet_link_info(const std::string magnet_link) {
     auto magnet_params = lt::parse_magnet_uri(magnet_link);
     magnet_params.save_path = ".";
     magnet_params.flags |= lt::torrent_flags::default_dont_download;
@@ -61,7 +59,7 @@ lt::torrent_info load_magnet_link_info(const std::string magnet_link) {
                 }
 
                 if (lt::alert_cast<lt::torrent_error_alert>(a)) {
-                    throw TorrentError(a->message());
+                    return a->message();
                 }
 
                 if (auto st = lt::alert_cast<lt::state_update_alert>(a)) {
@@ -98,7 +96,7 @@ lt::torrent_info load_magnet_link_info(const std::string magnet_link) {
         // Try to restart magnet link metadata download
         stale_download_retries++;
         if (stale_download_retries > STALE_RETRIES) {
-            throw TorrentError("Stale magnet link metadata");
+            return std::string("Stale magnet link metadata");
         }
         magnet_session.abort();
     }
