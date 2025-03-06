@@ -108,7 +108,7 @@ std::variant<std::vector<file_unpack_info_t>, std::string> unpack_file(std::stri
             unpacked_files.push_back(file_unpack_info_t { new_extracted_file_name, std::string(err_string) });
             continue;
         }
-        unpacked_files.push_back(file_unpack_info_t { new_extracted_file_name, "" });
+        unpacked_files.push_back(file_unpack_info_t { new_extracted_file_name, std::nullopt });
     }
     archive_read_close(arch);
     archive_read_free(arch);

@@ -24,6 +24,7 @@ add_library (${PROJECT_NAME}_objects OBJECT
     src/archive/archive.cpp
     src/linked_files/linked_files.cpp
     src/downloading_files/downloading_files.cpp
+    src/path/path_utils.cpp
 )
 target_include_directories(${PROJECT_NAME}_objects PRIVATE ${APP_INCLUDES})
 target_link_libraries(${PROJECT_NAME}_objects PRIVATE ${APP_LIBS})
@@ -46,6 +47,8 @@ add_executable(
     test/curl_test.cpp
     test/torrent_test.cpp
     test/s3_test.cpp
+    test/downloading_files_test.cpp
+    test/linked_files_test.cpp
 )
 
 target_include_directories(${PROJECT_NAME}-test PRIVATE ${APP_INCLUDES})

@@ -56,10 +56,18 @@ std::vector<std::string> DownloadingFiles::download_next_chunk() {
     return to_download_files;
 }
 
-void DownloadingFiles::completed_file(std::string file_name) {
+void DownloadingFiles::complete_file(std::string file_name) {
     const auto file_to_erase = downloading_files.find(file_name);
     if (file_to_erase != downloading_files.end()) {
         downloading_files.erase(file_to_erase);
     }
     completed_files.insert(file_name);
+}
+
+bool DownloadingFiles::is_completed() const {
+    std::unordered_set<std::string> intersect;
+    for (const auto f : completed_files) {
+        if (torrent_files.count(f)) { intersect.insert(f); }
+    }
+    return intersect == torrent_files;
 }

@@ -4,6 +4,7 @@
 #include <filesystem>
 
 #include "../backoffxx/backoffxx.h"
+#include "../path/path_utils.hpp"
 
 #include "./s3.hpp"
 
@@ -23,6 +24,7 @@ S3Uploader::S3Uploader(
     const std::string &secret_key_,
     const std::string &bucket_,
     const std::string &region_,
+    const std::string &path_from_,
     const std::string &path_to_
 ) :
     thread_count {thread_count_},
@@ -31,6 +33,7 @@ S3Uploader::S3Uploader(
     secret_key {secret_key_},
     bucket {bucket_},
     region {region_},
+    path_from {path_from_},
     path_to {path_to_} {
     if (!thread_count) {
         thread_count = TASKS_COUNT_DEFAULT;
@@ -167,6 +170,7 @@ static void s3_upload_task(
     const std::string &secret_key,
     const std::string &bucket,
     const std::string &region,
+    const std::string &path_from,
     const std::string &path_to,
     ThreadSafeDeque<S3TaskEvent> &message_queue,
     unsigned int task_index
@@ -183,13 +187,15 @@ static void s3_upload_task(
             break;
         }
         const auto file_event = std::get<S3TaskEventNewFile>(event);
-        auto filename = std::filesystem::path(file_event.file_name).string();
-        fprintf(stdout, "[Task %u] Uploading %s\n", task_index + 1, filename.c_str());
-        const auto save_to_filename = std::filesystem::path(path_to) / std::filesystem::path(file_event.file_name);
-        const auto ret = write_file_s3(filename, client, bucket, region, save_to_filename.string());
+        const auto save_from_filename = (std::filesystem::path(path_from) / std::filesystem::path(file_event.file_name)).lexically_normal().string();
+        fprintf(stdout, "[Task %u] Uploading %s\n", task_index + 1, save_from_filename.c_str());
+
+        const auto save_to_filename = (std::filesystem::path(path_to) / std::filesystem::path(file_event.file_name)).lexically_normal().string();
+
+        const auto ret = write_file_s3(save_from_filename, client, bucket, region, save_to_filename);
         if (ret.has_value()) {
-            fprintf(stderr, "[Task %u] Could not upload file \"%s\". Error %s\n", task_index + 1, filename.c_str(), ret.value().c_str());
-            progress_queue.push_back(S3ProgressUploadError { filename, ret.value() });
+            fprintf(stderr, "[Task %u] Could not upload file \"%s\". Error %s\n", task_index + 1, save_from_filename.c_str(), ret.value().c_str());
+            progress_queue.push_back(S3ProgressUploadError { file_event.file_name, ret.value() });
             continue;
         }
         progress_queue.push_back(S3ProgressUploadOk { file_event.file_name });
@@ -225,7 +231,7 @@ std::optional<std::string> S3Uploader::start() {
     for (unsigned int i = 0; i < thread_count; i++) {
         // use lambda to MSVC workaround
         std::thread task([&, i]() {
-            s3_upload_task(progress_queue, url, access_key, secret_key, bucket, region, path_to, message_queue, i);
+            s3_upload_task(progress_queue, url, access_key, secret_key, bucket, region, path_from, path_to, message_queue, i);
         });
         tasks.push_back(std::move(task));
     }

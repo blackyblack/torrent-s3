@@ -3,10 +3,11 @@
 #include <string>
 #include <vector>
 #include <variant>
+#include <optional>
 
 struct file_unpack_info_t {
     std::string name;
-    std::string error_message;
+    std::optional<std::string> error_message;
 };
 
 bool is_packed(std::string file_name);

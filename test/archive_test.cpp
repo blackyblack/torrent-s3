@@ -55,3 +55,22 @@ TEST(archive_test, unpack_zip_multi) {
     EXPECT_EQ(files.size(), 2);
     std::filesystem::remove_all(get_tmp_dir());
 }
+
+TEST(archive_test, unpack_with_autofolder) {
+    const auto ret = unpack_file(get_asset("1.zip"), (std::filesystem::path(get_tmp_dir()) / "1.zip").string());
+    EXPECT_TRUE(std::holds_alternative<std::vector<file_unpack_info_t>>(ret));
+    const auto files = std::get<std::vector<file_unpack_info_t>>(ret);
+    EXPECT_EQ(files.size(), 1);
+    std::filesystem::remove_all(get_tmp_dir());
+}
+
+TEST(archive_test, unpack_with_autofolder_in_same_directory) {
+    const auto dest_file = std::filesystem::path(get_tmp_dir()) / "1.zip";
+    std::filesystem::create_directory(get_tmp_dir());
+    std::filesystem::copy_file(get_asset("1.zip"), dest_file);
+    const auto ret = unpack_file(dest_file.string(), dest_file.string());
+    EXPECT_TRUE(std::holds_alternative<std::vector<file_unpack_info_t>>(ret));
+    const auto files = std::get<std::vector<file_unpack_info_t>>(ret);
+    EXPECT_EQ(files.size(), 1);
+    std::filesystem::remove_all(get_tmp_dir());
+}

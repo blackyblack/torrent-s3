@@ -31,6 +31,7 @@ typedef std::variant<S3ProgressUploadOk, S3ProgressUploadError> S3ProgressEvent;
 class S3Uploader {
   public:
     // use default thread count (16) if thread_count is set to 0
+    // path_from_ - where we store files
     // path_to_ - where to upload them
     S3Uploader(
         unsigned int thread_count_,
@@ -39,6 +40,7 @@ class S3Uploader {
         const std::string &secret_key_,
         const std::string &bucket_,
         const std::string &region_,
+        const std::string &path_from_,
         const std::string &path_to_
     );
 
@@ -59,6 +61,8 @@ class S3Uploader {
     const std::string secret_key;
     const std::string bucket;
     const std::string region;
+
+    const std::string path_from;
     const std::string path_to;
     std::unique_ptr<minio::creds::Provider> provider;
     std::unique_ptr<minio::s3::Client> client;

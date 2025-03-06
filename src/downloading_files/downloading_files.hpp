@@ -11,7 +11,9 @@ class DownloadingFiles {
   public:
     DownloadingFiles(const lt::torrent_info& torrent_, std::vector<std::string> updated_files, unsigned long long size_limit_bytes);
     std::vector<std::string> download_next_chunk();
-    void completed_file(std::string file_name);
+    // mark as downloaded
+    void complete_file(std::string file_name);
+    bool is_completed() const;
 
   private:
     const lt::torrent_info torrent;

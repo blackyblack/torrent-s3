@@ -18,6 +18,7 @@
 #include "./archive/archive.hpp"
 #include "./linked_files/linked_files.hpp"
 #include "./downloading_files/downloading_files.hpp"
+#include "./path/path_utils.hpp"
 
 #define STRING(x) #x
 #define XSTRING(x) STRING(x)
@@ -41,6 +42,39 @@ static bool is_http_url(const std::string &url) {
     return std::regex_match(url, url_regex);
 }
 
+static void s3_file_upload_complete(const std::string path_from, const std::string relative_filename, DownloadingFiles &downloading_files, LinkedFiles &unfinished_files) {
+    const auto filename = (std::filesystem::path(path_from) / std::filesystem::path(relative_filename)).string();
+    fprintf(stdout, "Deleting %s\n", filename.c_str());
+    std::remove(filename.c_str());
+
+    // populate parent file name, if any
+    std::string parent_file_name;
+    bool has_parent = false;
+    {
+        const auto parent = unfinished_files.get_parent(relative_filename);
+        if (parent.has_value()) {
+            parent_file_name = parent.value();
+            unfinished_files.remove_child(relative_filename);
+            has_parent = true;
+        } else {
+            parent_file_name = relative_filename;
+            unfinished_files.remove_parent(relative_filename);
+        }
+    }
+    // if parent is still not completed, keep uploading
+    const auto parent = unfinished_files.get_parent(relative_filename);
+    if (parent.has_value()) {
+        return;
+    }
+    // delete empty directory with unpacked files
+    if (has_parent) {
+        const auto absolute_parent_filename = (std::filesystem::path(path_from) / std::filesystem::path(parent_file_name)).string();
+        const auto extract_folder = folder_for_unpacked_file(absolute_parent_filename);
+        std::filesystem::remove(extract_folder);
+    }
+    downloading_files.complete_file(parent_file_name);
+}
+
 int main(int argc, char const* argv[]) {
     cxxopts::Options options(APP_NAME);
 
@@ -56,7 +90,6 @@ int main(int argc, char const* argv[]) {
         ("l,limit-size", "Temporary directory maximum size in bytes", cxxopts::value<unsigned long long>())
         ("p,hashlist-file", std::string("Path to hashlist. Default is <download-path>/") + std::string(FILE_HASHES_STORAGE_NAME), cxxopts::value<std::string>())
         ("z,extract-files", "Extract downloaded archives before uploading")
-        ("f,extract-files-path", "Temporary directory for extracted files", cxxopts::value<std::string>())
         ("v,version", "Show version")
         ("h,help", "Show help");
 
@@ -165,11 +198,6 @@ int main(int argc, char const* argv[]) {
         s3_region = args["s3-region"].as<std::string>();
     }
 
-    std::string extract_files_path = "";
-    if (args.count("extract-files-path")) {
-        extract_files_path = args["extract-files-path"].as<std::string>();
-    }
-
     const auto extract_files = args.count("extract-files") > 0;
 
     fprintf(stdout, "Torrent-S3 starting\n");
@@ -195,10 +223,11 @@ int main(int argc, char const* argv[]) {
             torrent_params.ti = std::make_shared<lt::torrent_info>(ti);
         }
         if (!use_url && !use_magnet) {
-            torrent_params.ti = std::make_shared<lt::torrent_info>(torrent_url);
+            const auto path = std::filesystem::canonical(torrent_url);
+            torrent_params.ti = std::make_shared<lt::torrent_info>(path.string());
         }
     } catch (std::exception e) {
-        fprintf(stderr, "Failed to load torrent info\n");
+        fprintf(stderr, "Failed to load torrent info: %s\n", e.what());
         return EXIT_FAILURE;
     }
 
@@ -219,7 +248,7 @@ int main(int argc, char const* argv[]) {
         fprintf(stderr, "Hashlist not found at %s. Creating new.\n", hashlist_path.string().c_str());
     }
 
-    S3Uploader s3_uploader(0, s3_url, s3_access_key, s3_secret_key, s3_bucket, s3_region, upload_path);
+    S3Uploader s3_uploader(0, s3_url, s3_access_key, s3_secret_key, s3_bucket, s3_region, download_path, upload_path);
     const auto s3_start_ret = s3_uploader.start();
     if (s3_start_ret.has_value()) {
         fprintf(stderr, "Could not start S3 uploader. Error:\n%s\n", s3_start_ret.value().c_str());
@@ -230,6 +259,7 @@ int main(int argc, char const* argv[]) {
     std::vector new_files(new_files_set.begin(), new_files_set.end());
     DownloadingFiles downloading_files(*torrent_params.ti, new_files, limit_size_bytes);
     const auto next_chunk = downloading_files.download_next_chunk();
+    // TODO: write tests for LinkedFiles and DownloadingFiles
     LinkedFiles linked_files;
     LinkedFiles unfinished_files;
 
@@ -240,75 +270,86 @@ int main(int argc, char const* argv[]) {
     auto &download_progress = torrent_downloader.get_progress_queue();
     auto &upload_progress = s3_uploader.get_progress_queue();
     std::vector<file_upload_error_t> file_errors;
-    bool download_completed = next_chunk.empty();
-    unsigned int unfinished_uploads = 0;
+    bool download_error = false;
     while(true) {
-        if (download_completed && unfinished_uploads == 0) break;
+        if ((downloading_files.is_completed() || download_error) && unfinished_files.get_files().size() == 0) break;
         while (!download_progress.empty()) {
             const auto torrent_event = download_progress.pop_front_waiting();
             if (std::holds_alternative<TorrentProgressDownloadError>(torrent_event)) {
                 const auto torrent_error = std::get<TorrentProgressDownloadError>(torrent_event);
                 fprintf(stderr, "Error during downloading torrent files: %s\n", torrent_error.error.c_str());
                 torrent_downloader.stop();
-                download_completed = true;
+                download_error = true;
                 continue;
             }
             const auto torrent_file_downloaded = std::get<TorrentProgressDownloadOk>(torrent_event);
-            const auto file_name = (std::filesystem::path(download_path) / torrent_file_downloaded.file_name).string();
-            // TODO: unpack archived file before uploading and add to linked files
+
+            const auto file_name_full = std::filesystem::path(download_path) / torrent_file_downloaded.file_name;
+            const auto file_name_str = file_name_full.string();
             std::vector<std::string> linked_file_names;
+
+            if (extract_files && is_packed(file_name_str)) {
+                // automatically create folder for extracted files
+                const auto extract_folder = folder_for_unpacked_file(file_name_str);
+                const auto extract_ret = unpack_file(file_name_str, extract_folder);
+                // upload without unpacking if extraction failed
+                if (std::holds_alternative<std::string>(extract_ret)) {
+                    fprintf(stderr, "Could not extract file \"%s\": %s\n", file_name_str.c_str(), std::get<std::string>(extract_ret).c_str());
+                } else {
+                    const auto files = std::get<std::vector<file_unpack_info_t>>(extract_ret);
+                    std::vector<file_unpack_info_t> filtered_files;
+                    std::copy_if(files.begin(), files.end(), std::back_inserter(filtered_files), [](const auto &f) {
+                        return !f.error_message.has_value();
+                    });
+                    // upload without unpacking if some files have not been extracted properly
+                    if (filtered_files.size() != files.size()) {
+                        fprintf(stderr, "Some files were not extracted from \"%s\"\n", file_name_str.c_str());
+                    } else {
+                        std::transform(filtered_files.begin(), filtered_files.end(), std::back_inserter(linked_file_names), [&download_path](const file_unpack_info_t &f) {
+                            return path_to_relative(f.name, download_path);
+                        });
+                        // erase archive after extraction
+                        std::remove(file_name_str.c_str());
+                    }
+                }
+            }
+            linked_files.add_files(torrent_file_downloaded.file_name, linked_file_names);
+            unfinished_files.add_files(torrent_file_downloaded.file_name, linked_file_names);
             // upload parent file if linked files are empty
             if (linked_file_names.empty()) {
-                unfinished_uploads++;
-                s3_uploader.new_file(file_name);
+                s3_uploader.new_file(torrent_file_downloaded.file_name);
                 continue;
             }
             // upload linked files
-            linked_files.add_files(file_name, linked_file_names);
-            unfinished_files.add_files(file_name, linked_file_names);
             for (const auto &f: linked_file_names) {
-                unfinished_uploads++;
                 s3_uploader.new_file(f);
             }
             continue;
         }
         while (!upload_progress.empty()) {
             const auto s3_event = upload_progress.pop_front_waiting();
-            unfinished_uploads--;
             if (std::holds_alternative<S3ProgressUploadError>(s3_event)) {
                 const auto s3_error = std::get<S3ProgressUploadError>(s3_event);
                 fprintf(stderr, "Error during uploading files to S3: %s\n", s3_error.error.c_str());
                 file_errors.push_back(file_upload_error_t { s3_error.file_name, s3_error.error });
+                // process as completed to avoid infinite loop
+                s3_file_upload_complete(download_path, s3_error.file_name, downloading_files, unfinished_files);
                 continue;
             }
             const auto s3_file_uploaded = std::get<S3ProgressUploadOk>(s3_event);
-            
-            // upload completed - erase file
-            fprintf(stdout, "Deleting %s\n", s3_file_uploaded.file_name.c_str());
-            std::remove(s3_file_uploaded.file_name.c_str());
 
-            // populate parent file name, if any
-            std::string parent_file_name;
-            {
-                const auto parent = unfinished_files.get_parent(s3_file_uploaded.file_name);
-                if (parent.has_value()) {
-                    parent_file_name = parent.value();
-                } else {
-                    parent_file_name = s3_file_uploaded.file_name;
-                }
-                unfinished_files.remove_child(s3_file_uploaded.file_name);
-            }
-            // if parent is still not completed, keep uploading
-            const auto parent = unfinished_files.get_parent(s3_file_uploaded.file_name);
-            if (parent.has_value()) {
+            s3_file_upload_complete(download_path, s3_file_uploaded.file_name, downloading_files, unfinished_files);
+
+            if (download_error) {
                 continue;
             }
-            downloading_files.completed_file(parent_file_name);
-            if (download_completed) continue;
+            // if some linked files are not uploaded yet, don't start next download
+            if (unfinished_files.get_parent(s3_file_uploaded.file_name).has_value()) {
+                continue;
+            }
             // check for completed downloads only on S3 events for optimization purpose
             const auto next_chunk = downloading_files.download_next_chunk();
             if (next_chunk.empty()) {
-                download_completed = true;
                 continue;
             }
             torrent_downloader.download_files(next_chunk);
@@ -334,14 +375,16 @@ int main(int argc, char const* argv[]) {
             for (const auto &linked_file: hashlist[f].linked_files) {
                 const auto delete_file_ret = s3_uploader.delete_file(linked_file);
                 if (delete_file_ret.has_value()) {
-                    fprintf(stderr, "Could not delete file \"%s\" from S3. Error: %s\n", linked_file.c_str(), delete_file_ret.value().c_str());
+                    const auto file_name_full = std::filesystem::path(download_path) / linked_file;
+                    fprintf(stderr, "Could not delete file \"%s\" from S3. Error: %s\n", file_name_full.string().c_str(), delete_file_ret.value().c_str());
                 }
             }
         }
         // This file was deleted - remove from S3
         const auto delete_file_ret = s3_uploader.delete_file(f);
         if (delete_file_ret.has_value()) {
-            fprintf(stderr, "Could not delete file \"%s\" from S3. Error: %s\n", f.c_str(), delete_file_ret.value().c_str());
+            const auto file_name_full = std::filesystem::path(download_path) / f;
+            fprintf(stderr, "Could not delete file \"%s\" from S3. Error: %s\n", file_name_full.string().c_str(), delete_file_ret.value().c_str());
         }
     }
 
