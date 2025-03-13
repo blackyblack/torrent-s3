@@ -2,6 +2,7 @@
 
 #include <unordered_map>
 #include <unordered_set>
+#include <filesystem>
 
 #include <libtorrent/torrent_info.hpp>
 
@@ -28,9 +29,11 @@ std::ostream& serialize(file_hashlist_t& files, std::ostream& os);
 
 file_hashlist_t deserialize(std::istream& is);
 
-file_hashlist_t load_hashlist(std::string path);
+// unicode paths on Windows are not supported
+file_hashlist_t load_hashlist(std::filesystem::path path);
 
-void save_hashlist(std::string path, const file_hashlist_t& files);
+// unicode paths on Windows are not supported
+void save_hashlist(std::filesystem::path path, const file_hashlist_t& files);
 
 std::unordered_set<std::string> get_updated_files(const file_hashlist_t& files, const lt::torrent_info &torrent);
 

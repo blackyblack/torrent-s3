@@ -1,5 +1,8 @@
 #include <filesystem>
 #include <gtest/gtest.h>
+#ifdef _WIN32
+    #include <windows.h>
+#endif // _WIN32
 
 #include "./test_utils.hpp"
 
@@ -13,6 +16,10 @@ TEST(s3_test, start_stop) {
 }
 
 TEST(s3_test, bad_file) {
+    #ifdef _WIN32
+        SetConsoleOutputCP(CP_UTF8);
+    #endif // _WIN32
+
     S3Uploader uploader(1, "http://play.min.io", "Q3AM3UQ867SPQQA43P2F", "zuf+tfteSlswRu7BJ86wekitnifILbZam1KYY3TG", "test", "", "./", "");
     auto &progress_queue = uploader.get_progress_queue();
     const auto ret = uploader.start();
@@ -49,7 +56,7 @@ TEST(s3_test, parallel_files) {
 }
 
 TEST(s3_test, use_path_from) {
-    const auto path_from = (std::filesystem::path(SOURCE_DIR) / std::filesystem::path("test/assets")).string();
+    const auto path_from = std::filesystem::path(SOURCE_DIR) / std::filesystem::path("test/assets");
     const auto filename = "1.txt";
     S3Uploader uploader(1, "http://play.min.io", "Q3AM3UQ867SPQQA43P2F", "zuf+tfteSlswRu7BJ86wekitnifILbZam1KYY3TG", "test", "", path_from, "upload");
     auto &progress_queue = uploader.get_progress_queue();
@@ -62,4 +69,24 @@ TEST(s3_test, use_path_from) {
     const auto s3_event = progress_queue.pop_front_waiting();
     const auto &download_ok = std::get<S3ProgressUploadOk>(s3_event);
     EXPECT_EQ(download_ok.file_name, filename);
+}
+
+TEST(s3_test, unicode_name) {
+    #ifdef _WIN32
+        SetConsoleOutputCP(CP_UTF8);
+    #endif // _WIN32
+
+    const auto path_from = std::filesystem::path(SOURCE_DIR) / std::filesystem::path("test/assets");
+    const auto unicode_file = std::string("Документ Microsoft Word (2).htm");
+    S3Uploader uploader(1, "http://play.min.io", "Q3AM3UQ867SPQQA43P2F", "zuf+tfteSlswRu7BJ86wekitnifILbZam1KYY3TG", "test", "", path_from, "upload");
+    auto &progress_queue = uploader.get_progress_queue();
+    const auto ret = uploader.start();
+    EXPECT_FALSE(ret.has_value());
+    EXPECT_TRUE(progress_queue.empty());
+    uploader.new_file(unicode_file);
+    uploader.stop();
+    EXPECT_FALSE(progress_queue.empty());
+    const auto s3_event = progress_queue.pop_front_waiting();
+    const auto &download_ok = std::get<S3ProgressUploadOk>(s3_event);
+    EXPECT_EQ(download_ok.file_name, unicode_file);
 }

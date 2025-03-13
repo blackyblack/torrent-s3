@@ -1,6 +1,10 @@
 #include <filesystem>
 #include <gtest/gtest.h>
 
+#ifdef _WIN32
+    #include <windows.h>
+#endif // _WIN32
+
 #include "./test_utils.hpp"
 
 #include "../src/archive/archive.hpp"
@@ -69,6 +73,31 @@ TEST(archive_test, unpack_with_autofolder_in_same_directory) {
     std::filesystem::create_directory(get_tmp_dir());
     std::filesystem::copy_file(get_asset("1.zip"), dest_file);
     const auto ret = unpack_file(dest_file.string(), dest_file.string());
+    EXPECT_TRUE(std::holds_alternative<std::vector<file_unpack_info_t>>(ret));
+    const auto files = std::get<std::vector<file_unpack_info_t>>(ret);
+    EXPECT_EQ(files.size(), 1);
+    std::filesystem::remove_all(get_tmp_dir());
+}
+
+TEST(archive_test, unpack_unicode_name) {
+    const auto filename = std::filesystem::path(SOURCE_DIR) / "test/assets/я.zip";
+    const auto ret = unpack_file(filename, get_tmp_dir());
+    EXPECT_TRUE(std::holds_alternative<std::vector<file_unpack_info_t>>(ret));
+    const auto files = std::get<std::vector<file_unpack_info_t>>(ret);
+    EXPECT_EQ(files.size(), 1);
+    std::filesystem::remove_all(get_tmp_dir());
+}
+
+TEST(archive_test, unpack_unicode_output_name) {
+    const auto filename = std::filesystem::path(SOURCE_DIR) / "test/assets/я.zip";
+
+    // also test unicode console output here
+    #ifdef _WIN32
+        SetConsoleOutputCP(CP_UTF8);
+    #endif // _WIN32
+    fprintf(stderr, "Console output. File is \"%s\"\n", filename.string().c_str());
+
+    const auto ret = unpack_file(filename, std::filesystem::path(get_tmp_dir()) / "я");
     EXPECT_TRUE(std::holds_alternative<std::vector<file_unpack_info_t>>(ret));
     const auto files = std::get<std::vector<file_unpack_info_t>>(ret);
     EXPECT_EQ(files.size(), 1);

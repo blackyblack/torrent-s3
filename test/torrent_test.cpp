@@ -53,7 +53,7 @@ TEST(torrent_test, download_files) {
     EXPECT_EQ(download_ok.file_index, 2);
     EXPECT_TRUE(progress_queue.empty());
     const auto filename = std::filesystem::path(get_tmp_dir()) / "test_folder" / "README";
-    EXPECT_TRUE(std::filesystem::exists(filename));
+    EXPECT_TRUE(std::filesystem::exists(std::filesystem::u8path(filename.string())));
     std::filesystem::remove_all(get_tmp_dir());
 }
 
@@ -81,7 +81,7 @@ TEST(torrent_test, download_files_overlapping_pieces) {
     EXPECT_EQ(download_ok.file_index, 1);
     EXPECT_TRUE(progress_queue.empty());
     const auto filename = std::filesystem::path(get_tmp_dir()) / "test_folder" / "images" / "melk-abbey-library.jpg";
-    EXPECT_TRUE(std::filesystem::exists(filename));
+    EXPECT_TRUE(std::filesystem::exists(std::filesystem::u8path(filename.string())));
     std::filesystem::remove_all(get_tmp_dir());
 }
 
@@ -105,7 +105,7 @@ TEST(torrent_test, continue_after_overlapping_pieces) {
     EXPECT_EQ(download_ok.file_name, to_download);
     EXPECT_EQ(download_ok.file_index, 1);
     const auto filename = std::filesystem::path(get_tmp_dir()) / "test_folder" / "images" / "melk-abbey-library.jpg";
-    EXPECT_TRUE(std::filesystem::exists(filename));
+    EXPECT_TRUE(std::filesystem::exists(std::filesystem::u8path(filename.string())));
     EXPECT_TRUE(progress_queue.empty());
     const auto to_download_next = torrent_params.ti->files().file_path(lt::file_index_t {2});
     const auto to_download_next_path = std::filesystem::path(to_download_next);
@@ -119,7 +119,34 @@ TEST(torrent_test, continue_after_overlapping_pieces) {
     EXPECT_EQ(download_ok_next.file_name, to_download_next);
     EXPECT_EQ(download_ok_next.file_index, 2);
     const auto filename_next = std::filesystem::path(get_tmp_dir()) / "test_folder" / "README";
-    EXPECT_TRUE(std::filesystem::exists(filename_next));
+    EXPECT_TRUE(std::filesystem::exists(std::filesystem::u8path(filename_next.string())));
 
+    std::filesystem::remove_all(get_tmp_dir());
+}
+
+TEST(torrent_test, unicode_files) {
+    const auto torrent_file = std::filesystem::path(SOURCE_DIR) / "test/assets/я/starwars.torrent";
+    EXPECT_TRUE(std::filesystem::exists(std::filesystem::u8path(torrent_file.string())));
+    lt::add_torrent_params torrent_params;
+    torrent_params.save_path = (std::filesystem::path(get_tmp_dir()) / "я").string();
+    torrent_params.ti = std::make_shared<lt::torrent_info>(torrent_file.string());
+    EXPECT_EQ(torrent_params.ti->num_files(), 502);
+    const auto to_download = torrent_params.ti->files().file_path(lt::file_index_t {501});
+    const auto to_download_path = std::filesystem::path(to_download);
+    EXPECT_EQ(to_download_path.filename(), "Документ Microsoft Word (2).htm");
+    TorrentDownloader downloader(torrent_params);
+    auto &progress_queue = downloader.get_progress_queue();
+    EXPECT_TRUE(progress_queue.empty());
+    downloader.start();
+    downloader.download_files({to_download});
+    downloader.stop();
+    EXPECT_FALSE(progress_queue.empty());
+    const auto torrent_event = progress_queue.pop_front_waiting();
+    const auto &download_ok = std::get<TorrentProgressDownloadOk>(torrent_event);
+    EXPECT_EQ(download_ok.file_name, to_download);
+    EXPECT_EQ(download_ok.file_index, 501);
+    EXPECT_TRUE(progress_queue.empty());
+    const auto filename = std::filesystem::path(get_tmp_dir()) / "я/Star Wars books/Документ Microsoft Word (2).htm";
+    EXPECT_TRUE(std::filesystem::exists(std::filesystem::u8path(filename.string())));
     std::filesystem::remove_all(get_tmp_dir());
 }

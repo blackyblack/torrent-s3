@@ -40,8 +40,8 @@ class S3Uploader {
         const std::string &secret_key_,
         const std::string &bucket_,
         const std::string &region_,
-        const std::string &path_from_,
-        const std::string &path_to_
+        const std::filesystem::path &path_from_,
+        const std::filesystem::path &path_to_
     );
 
     std::optional<std::string> start();
@@ -62,8 +62,8 @@ class S3Uploader {
     const std::string bucket;
     const std::string region;
 
-    const std::string path_from;
-    const std::string path_to;
+    const std::filesystem::path path_from;
+    const std::filesystem::path path_to;
     std::unique_ptr<minio::creds::Provider> provider;
     std::unique_ptr<minio::s3::Client> client;
 

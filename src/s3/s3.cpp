@@ -4,7 +4,6 @@
 #include <filesystem>
 
 #include "../backoffxx/backoffxx.h"
-#include "../path/path_utils.hpp"
 
 #include "./s3.hpp"
 
@@ -24,8 +23,8 @@ S3Uploader::S3Uploader(
     const std::string &secret_key_,
     const std::string &bucket_,
     const std::string &region_,
-    const std::string &path_from_,
-    const std::string &path_to_
+    const std::filesystem::path &path_from_,
+    const std::filesystem::path &path_to_
 ) :
     thread_count {thread_count_},
     url {url_},
@@ -56,10 +55,19 @@ static std::string gen_random(const int len) {
     return tmp_s;
 }
 
-static std::optional<std::string> write_stream_s3(std::istream &stream, unsigned long content_size, minio::s3::Client &client, const std::string &bucket, const std::string &region, const std::string &path) {
+static std::string replace(std::string subject, const std::string& search, const std::string& replace) {
+    size_t pos = 0;
+    while((pos = subject.find(search, pos)) != std::string::npos) {
+        subject.replace(pos, search.length(), replace);
+        pos += replace.length();
+    }
+    return subject;
+}
+
+static std::optional<std::string> write_stream_s3(std::istream &stream, unsigned long content_size, minio::s3::Client &client, const std::string &bucket, const std::string &region, const std::filesystem::path &path) {
     minio::s3::PutObjectArgs args(stream, content_size, 0);
     args.bucket = bucket;
-    args.object = path;
+    args.object = replace(path.string(), "\\", "/");
     if (!region.empty()) {
         args.region = region;
     }
@@ -86,27 +94,27 @@ static std::optional<std::string> write_stream_s3(std::istream &stream, unsigned
     return std::nullopt;
 }
 
-static std::optional<std::string> write_content_to_file_s3(const std::string &content, minio::s3::Client &client, const std::string &bucket, const std::string &region, const std::string &path) {
+static std::optional<std::string> write_content_to_file_s3(const std::string &content, minio::s3::Client &client, const std::string &bucket, const std::string &region, const std::filesystem::path &path) {
     const auto content_size = content.size();
     std::stringstream stream(content);
     return write_stream_s3(stream, content_size, client, bucket, region, path);
 }
 
-static std::optional<std::string> write_file_s3(const std::string &file_path, minio::s3::Client &client, const std::string &bucket, const std::string &region, const std::string &path) {
-    std::ifstream file_stream(file_path, std::ios::binary);
+static std::optional<std::string> write_file_s3(const std::filesystem::path &file_path, minio::s3::Client &client, const std::string &bucket, const std::string &region, const std::filesystem::path &path) {
+    std::ifstream file_stream(std::filesystem::u8path(file_path.string()), std::ios::binary);
     unsigned long file_size;
     try {
-        file_size = std::filesystem::file_size(std::filesystem::path(file_path));
+        file_size = std::filesystem::file_size(std::filesystem::u8path(file_path.string()));
     } catch (const std::filesystem::filesystem_error& e) {
         return e.what();
     }
     return write_stream_s3(file_stream, file_size, client, bucket, region, path);
 }
 
-static std::optional<std::string> delete_file_s3(minio::s3::Client &client, const std::string &bucket, const std::string &region, const std::string &path) {
+static std::optional<std::string> delete_file_s3(minio::s3::Client &client, const std::string &bucket, const std::string &region, const std::filesystem::path &path) {
     minio::s3::RemoveObjectArgs args;
     args.bucket = bucket;
-    args.object = path;
+    args.object = replace(path.string(), "\\", "/");
     if (!region.empty()) {
         args.region = region;
     }
@@ -170,8 +178,8 @@ static void s3_upload_task(
     const std::string &secret_key,
     const std::string &bucket,
     const std::string &region,
-    const std::string &path_from,
-    const std::string &path_to,
+    const std::filesystem::path &path_from,
+    const std::filesystem::path &path_to,
     ThreadSafeDeque<S3TaskEvent> &message_queue,
     unsigned int task_index
 ) {
@@ -187,14 +195,14 @@ static void s3_upload_task(
             break;
         }
         const auto file_event = std::get<S3TaskEventNewFile>(event);
-        const auto save_from_filename = (std::filesystem::path(path_from) / std::filesystem::path(file_event.file_name)).lexically_normal().string();
-        fprintf(stdout, "[Task %u] Uploading %s\n", task_index + 1, save_from_filename.c_str());
+        const auto save_from_filename = (path_from / file_event.file_name).lexically_normal();
+        fprintf(stdout, "[Task %u] Uploading %s\n", task_index + 1, save_from_filename.string().c_str());
 
-        const auto save_to_filename = (std::filesystem::path(path_to) / std::filesystem::path(file_event.file_name)).lexically_normal().string();
+        const auto save_to_filename = (path_to / file_event.file_name).lexically_normal();
 
         const auto ret = write_file_s3(save_from_filename, client, bucket, region, save_to_filename);
         if (ret.has_value()) {
-            fprintf(stderr, "[Task %u] Could not upload file \"%s\". Error %s\n", task_index + 1, save_from_filename.c_str(), ret.value().c_str());
+            fprintf(stderr, "[Task %u] Could not upload file \"%s\". Error %s\n", task_index + 1, save_from_filename.string().c_str(), ret.value().c_str());
             progress_queue.push_back(S3ProgressUploadError { file_event.file_name, ret.value() });
             continue;
         }
@@ -216,13 +224,13 @@ std::optional<std::string> S3Uploader::start() {
 
     std::string empty_file;
     const auto file_name = gen_random(RANDOM_FILE_NAME_LENGTH);
-    const auto save_to_filename = std::filesystem::path(path_to) / std::filesystem::path(file_name);
-    const auto write_option = write_content_to_file_s3(empty_file, *client, bucket, region, save_to_filename.string());
+    const auto save_to_filename = path_to / file_name;
+    const auto write_option = write_content_to_file_s3(empty_file, *client, bucket, region, save_to_filename);
     if (write_option.has_value()) {
         return std::string("Could not write to bucket \"") + bucket + std::string("\". Error: ") + write_option.value();
     }
 
-    const auto delete_option = delete_file_s3(*client, bucket, region, save_to_filename.string());
+    const auto delete_option = delete_file_s3(*client, bucket, region, save_to_filename);
     if (delete_option.has_value()) {
         return std::string("Could not delete from bucket \"") + bucket + std::string("\". Error: ") + delete_option.value();
     }
@@ -257,6 +265,5 @@ void S3Uploader::new_file(const std::string &file_name) {
 }
 
 std::optional<std::string> S3Uploader::delete_file(const std::string &file_name) {
-    const auto delete_filename = std::filesystem::path(path_to) / std::filesystem::path(file_name);
-    return delete_file_s3(*client, bucket, region, delete_filename.string());
+    return delete_file_s3(*client, bucket, region, path_to / file_name);
 }

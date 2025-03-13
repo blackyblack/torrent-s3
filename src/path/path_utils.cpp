@@ -1,15 +1,14 @@
 #include "./path_utils.hpp"
 
-std::string folder_for_unpacked_file(const std::string file_name) {
-    const auto path = std::filesystem::path(file_name);
-    auto ext = path.extension().string();
+std::filesystem::path folder_for_unpacked_file(const std::filesystem::path file_name) {
+    auto ext = file_name.extension().string();
     if(ext.find_last_of(".") != std::string::npos) {
         ext = ext.substr(ext.find_last_of(".") + 1);
     }
-    return (path.parent_path() / (path.stem().string() + "_" + ext)).string();
+    return file_name.parent_path() / (file_name.stem().string() + "_" + ext);
 }
 
-std::string path_to_relative(const std::string file_name, const std::string root) {
+std::filesystem::path path_to_relative(const std::filesystem::path file_name, const std::filesystem::path root) {
     const auto from = std::filesystem::absolute(file_name);
     const auto base = std::filesystem::absolute(root);
     auto from_it = from.begin();
@@ -24,5 +23,5 @@ std::string path_to_relative(const std::string file_name, const std::string root
         save_to_filename /= *from_it;
         from_it++;
     }
-    return save_to_filename.string();
+    return save_to_filename;
 }
