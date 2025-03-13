@@ -6,7 +6,7 @@
 template<class T>
 class ThreadSafeDeque {
   public:
-    bool empty() {
+    bool empty() const {
         return deque.empty();
     }
 

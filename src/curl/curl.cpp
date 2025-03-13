@@ -2,10 +2,6 @@
 
 #include "./curl.hpp"
 
-DownloadError::DownloadError(std::string message) : std::runtime_error(message.c_str()) {}
-
-ParseError::ParseError(std::string message) : std::runtime_error(message.c_str()) {}
-
 static size_t write_buffer_callback(void* contents, size_t size, size_t nmemb, void* userp) {
     size_t realsize = size * nmemb;
     auto& mem = *static_cast<std::string*>(userp);
@@ -13,10 +9,10 @@ static size_t write_buffer_callback(void* contents, size_t size, size_t nmemb, v
     return realsize;
 }
 
-lt::torrent_info download_torrent_info(const std::string &url) {
+std::variant<lt::torrent_info, std::string> download_torrent_info(const std::string &url) {
     auto curl = curl_easy_init();
     if (curl == nullptr) {
-        throw DownloadError("Cannot start Curl");
+        return std::string("Cannot start Curl");
     }
 
     std::string data;
@@ -26,12 +22,12 @@ lt::torrent_info download_torrent_info(const std::string &url) {
     const auto res = curl_easy_perform(curl);
     curl_easy_cleanup(curl);
     if (res != CURLE_OK) {
-        throw DownloadError(std::string("Download with Curl error: ") + std::string(curl_easy_strerror(res)) + std::string("\n"));
+        return std::string("Download with Curl error: ") + std::string(curl_easy_strerror(res)) + std::string("\n");
     }
     try {
         lt::torrent_info torrent_file(data.data(), (int) data.size());
         return torrent_file;
     } catch (std::exception &e) {
-        throw ParseError("Couldn't parse .torrent file");
+        return std::string("Couldn't parse .torrent file");
     }
 }

@@ -92,21 +92,26 @@ file_hashlist_t deserialize(std::istream& is) {
             }
             hashes.push_back(std::string(hash_bytes, hash_size));
         }
-        uint32_t linked_file_size;
-        is.read(reinterpret_cast<char *>(&linked_file_size), sizeof(uint32_t));
+        uint32_t linked_files_size;
+        is.read(reinterpret_cast<char *>(&linked_files_size), sizeof(uint32_t));
         if (!is) {
             throw StreamError("eof");
         }
         std::vector<std::string> linked_file_names;
-        for (auto i = 0; i < hashes_size; i++) {
-            char* linked_file_bytes = new char[linked_file_size]();
-            for (auto i = 0; i < linked_file_size; i++) {
+        for (auto i = 0; i < linked_files_size; i++) {
+            uint32_t file_size;
+            is.read(reinterpret_cast<char *>(&file_size), sizeof(uint32_t));
+            if (!is) {
+                throw StreamError("eof");
+            }
+            char* linked_file_bytes = new char[file_size]();
+            for (auto i = 0; i < file_size; i++) {
                 is.read(linked_file_bytes + i, 1);
                 if (!is) {
                     throw StreamError("eof");
                 }
             }
-            linked_file_names.push_back(std::string(linked_file_bytes, linked_file_size));
+            linked_file_names.push_back(std::string(linked_file_bytes, file_size));
         }
         uint32_t name_size;
         is.read(reinterpret_cast<char *>(&name_size), sizeof(uint32_t));
@@ -126,12 +131,12 @@ file_hashlist_t deserialize(std::istream& is) {
     return files;
 }
 
-file_hashlist_t load_hashlist(std::string path) {
+file_hashlist_t load_hashlist(std::filesystem::path path) {
     std::ifstream ifs(path, std::ios::in | std::ios::binary);
     return deserialize(ifs);
 }
 
-void save_hashlist(std::string path, const file_hashlist_t& files) {
+void save_hashlist(std::filesystem::path path, const file_hashlist_t& files) {
     std::ofstream ofs(path, std::ios::out | std::ios::binary);
     serialize(files, ofs);
 }
@@ -171,12 +176,12 @@ std::unordered_set<std::string> get_updated_files(const file_hashlist_t& files, 
 
 std::unordered_set<std::string> get_removed_files(const file_hashlist_t& files, const lt::torrent_info &torrent) {
     std::unordered_set<std::string> removed_files;
+    for (const auto &f : files) {
+        removed_files.insert(f.first);
+    }
     for (const auto &file_index: torrent.files().file_range()) {
         const auto file_name = torrent.files().file_path(file_index);
-        if (files.count(file_name) > 0) {
-            continue;
-        }
-        removed_files.insert(file_name);
+        removed_files.erase(file_name);
     }
     return removed_files;
 }

@@ -15,22 +15,6 @@
 // Up to STALE_RETRIES for stale torrent metadata.
 #define STALE_RETRIES 5
 
-TorrentError::TorrentError(std::string message) : std::runtime_error(message.c_str()) {}
-
-torrent_message_type_t TorrentTaskEventTerminate::message_type() {
-    return TERMINATE;
-}
-
-TorrentTaskEventNewFile::TorrentTaskEventNewFile(std::string name) : file_name {name} {}
-
-torrent_message_type_t TorrentTaskEventNewFile::message_type() {
-    return NEW_FILE;
-}
-
-std::string TorrentTaskEventNewFile::get_name() {
-    return file_name;
-}
-
 // return the name of a torrent status enum
 static char const* state(lt::torrent_status::state_t s) {
     switch(s) {
@@ -51,7 +35,7 @@ static char const* state(lt::torrent_status::state_t s) {
     }
 }
 
-lt::torrent_info load_magnet_link_info(const std::string magnet_link) {
+std::variant<lt::torrent_info, std::string> load_magnet_link_info(const std::string magnet_link) {
     auto magnet_params = lt::parse_magnet_uri(magnet_link);
     magnet_params.save_path = ".";
     magnet_params.flags |= lt::torrent_flags::default_dont_download;
@@ -75,7 +59,7 @@ lt::torrent_info load_magnet_link_info(const std::string magnet_link) {
                 }
 
                 if (lt::alert_cast<lt::torrent_error_alert>(a)) {
-                    throw TorrentError(a->message());
+                    return a->message();
                 }
 
                 if (auto st = lt::alert_cast<lt::state_update_alert>(a)) {
@@ -112,7 +96,7 @@ lt::torrent_info load_magnet_link_info(const std::string magnet_link) {
         // Try to restart magnet link metadata download
         stale_download_retries++;
         if (stale_download_retries > STALE_RETRIES) {
-            throw TorrentError("Stale magnet link metadata");
+            return std::string("Stale magnet link metadata");
         }
         magnet_session.abort();
     }
@@ -129,7 +113,7 @@ static std::unordered_map<std::string, unsigned int> get_file_indexes(const lt::
 
 static void download_task(
     ThreadSafeDeque<TorrentProgressEvent> &progress_queue,
-    ThreadSafeDeque<std::shared_ptr<TorrentTaskEvent>> &message_queue,
+    ThreadSafeDeque<TorrentTaskEvent> &message_queue,
     const lt::add_torrent_params& torrent_params
 ) {
     fprintf(stdout, "Starting Torrent download upload task\n");
@@ -139,8 +123,14 @@ static void download_task(
     p.set_int(lt::settings_pack::alert_mask, lt::alert_category::error | lt::alert_category::status | lt::alert_category::file_progress);
     session.apply_settings(p);
 
-    lt::torrent_handle torrent_handle = session.add_torrent(torrent_params);
+    lt::add_torrent_params params { torrent_params };
+    params.file_priorities = std::vector<lt::download_priority_t>(params.ti->num_files(), libtorrent::dont_download);
+
+    lt::torrent_handle torrent_handle = session.add_torrent(params);
     bool download_error = false;
+    bool stop_download = false;
+    std::set<unsigned int> downloaded_indexes;
+    std::set<unsigned int> requested_indexes;
 
     const auto files = get_file_indexes(*torrent_handle.torrent_file());
 
@@ -148,19 +138,32 @@ static void download_task(
         if (download_error) {
             break;
         }
-        while (!message_queue.empty()) {
-            auto event = message_queue.pop_front_waiting();
-            if (event == nullptr) continue;
-            if (event->message_type() == TERMINATE) {
+        if (stop_download) {
+            std::set<unsigned int> intersect;
+            std::set_intersection(requested_indexes.begin(), requested_indexes.end(), downloaded_indexes.begin(), downloaded_indexes.end(),
+                 std::inserter(intersect, intersect.begin()));
+            if (intersect == requested_indexes) {
                 break;
             }
-            const auto file_event = std::dynamic_pointer_cast<TorrentTaskEventNewFile>(event);
-            const auto filename = file_event->get_name();
+        }
+        while (!message_queue.empty()) {
+            const auto event = message_queue.pop_front_waiting();
+            if (std::holds_alternative<TorrentTaskEventTerminate>(event)) {
+                stop_download = true;
+                break;
+            }
+            const auto file_event = std::get<TorrentTaskEventNewFile>(event);
+            const auto filename = file_event.file_name;
             if (files.count(filename) == 0) {
                 continue;
             }
             const auto file_index = files.at(filename);
+            requested_indexes.insert(file_index);
             torrent_handle.file_priority(lt::file_index_t {(int) file_index}, libtorrent::default_priority);
+            // check if it was already downloaded
+            if (downloaded_indexes.count(file_index) > 0) {
+                progress_queue.push_back(TorrentProgressDownloadOk { filename, file_index });
+            }
             continue;
         }
 
@@ -169,7 +172,7 @@ static void download_task(
 
         for (lt::alert const* a : alerts) {
             if (lt::alert_cast<lt::torrent_error_alert>(a)) {
-                progress_queue.push_back(TorrentProgressEvent {DOWNLOAD_ERROR, "", 0, a->message()});
+                progress_queue.push_back(TorrentProgressDownloadError { a->message() });
                 download_error = true;
                 break;
             }
@@ -178,9 +181,12 @@ static void download_task(
                 unsigned int file_index = (int) event->index;
 
                 std::cout << "File #" << file_index + 1 << " downloaded" << std::endl;
+                downloaded_indexes.insert(file_index);
 
-                const auto file_name = torrent_handle.torrent_file()->files().file_path(lt::file_index_t {(int) file_index});
-                progress_queue.push_back(TorrentProgressEvent {DOWNLOAD_OK, file_name, file_index, ""});
+                if (requested_indexes.count(file_index) > 0) {
+                    const auto file_name = torrent_handle.torrent_file()->files().file_path(lt::file_index_t {(int) file_index});
+                    progress_queue.push_back(TorrentProgressDownloadOk { file_name, file_index });
+                }
                 continue;
             }
 
@@ -217,8 +223,7 @@ void TorrentDownloader::start() {
 }
 
 void TorrentDownloader::stop() {
-    std::shared_ptr<TorrentTaskEvent> message = std::make_shared<TorrentTaskEventTerminate>();
-    message_queue.push_back(message);
+    message_queue.push_back(TorrentTaskEventTerminate {});
     task.join();
 }
 
@@ -227,8 +232,9 @@ ThreadSafeDeque<TorrentProgressEvent> &TorrentDownloader::get_progress_queue() {
 }
 
 void TorrentDownloader::download_files(const std::vector<std::string> &files) {
+    // There is no check if file exists in the torrent. Make sure to get the file paths
+    // from the torrent_info object.
     for (const auto &f: files) {
-        std::shared_ptr<TorrentTaskEvent> message = std::make_shared<TorrentTaskEventNewFile>(f);
-        message_queue.push_back(message);
+        message_queue.push_back(TorrentTaskEventNewFile { f });
     }
 }
