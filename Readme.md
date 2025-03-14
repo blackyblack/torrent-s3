@@ -13,7 +13,7 @@ Get binaries from the Gihub [Releases](https://github.com/blackyblack/torrent-s3
 - Install libraries
 
   ```sh
-  sudo apt install curl zip unzip tar
+  sudo apt install curl zip unzip tar libarchive-dev
   ```
 
 - Install [vcpkg](https://github.com/microsoft/vcpkg)
@@ -23,6 +23,12 @@ Get binaries from the Gihub [Releases](https://github.com/blackyblack/torrent-s3
   cd vcpkg
   ./bootstrap-vcpkg.sh
   VCPKG_ROOT=$(pwd)
+  ```
+
+- Install [gtest](https://github.com/google/googletest/tree/main)
+
+  ```sh
+  ./vcpkg install gtest
   ```
 
 - Install [minio-cpp](https://github.com/minio/minio-cpp)

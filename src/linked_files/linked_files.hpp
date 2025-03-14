@@ -3,6 +3,7 @@
 #include <string>
 #include <vector>
 #include <unordered_map>
+#include <unordered_set>
 #include <optional>
 
 class LinkedFiles {
@@ -16,7 +17,7 @@ class LinkedFiles {
   private:
     // key - parent file
     // value - linked files
-    std::unordered_map<std::string, std::vector<std::string>> linked_files;
+    std::unordered_map<std::string, std::unordered_set<std::string>> linked_files;
     // key - linked file
     // value - parent file
     std::unordered_map<std::string, std::string> parent_files;
