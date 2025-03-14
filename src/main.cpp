@@ -80,10 +80,7 @@ static void delete_child(LinkedFiles &folders, std::string file_name, const std:
 
         const auto children = folders.get_files();
         const auto parent_iter = children.find(parent_name);
-        if (parent_iter == children.end()) {
-            break;
-        }
-        if (parent_iter->second.size() > 0) {
+        if (parent_iter != children.end() && parent_iter->second.size() > 0) {
             break;
         }
         folders.remove_parent(parent_name);
@@ -112,13 +109,9 @@ static void s3_file_upload_complete(const std::filesystem::path path_from, Linke
     const auto parent_iter = linked_files.find(parent_file_name);
 
     // if parent is still not completed, keep uploading
-    if(parent_iter == linked_files.end()) {
+    if(parent_iter != linked_files.end() && parent_iter->second.size() > 0) {
         return;
     }
-    if(parent_iter->second.size() > 0) {
-        return;
-    }
-
     unfinished_files.remove_parent(parent_file_name);
     downloading_files.complete_file(parent_file_name);
 }

@@ -1,6 +1,7 @@
 # torrent-s3
 
 Downloads files from torrent and saves to S3 storage. Allows to use limited intermediate server storage, given files are small enough.
+Supports automatical archives (zip, rar, 7zip) extraction before uploading to S3.
 
 # Installation
 
@@ -13,7 +14,7 @@ Get binaries from the Gihub [Releases](https://github.com/blackyblack/torrent-s3
 - Install libraries
 
   ```sh
-  sudo apt install curl zip unzip tar
+  sudo apt install curl zip unzip tar libarchive-dev
   ```
 
 - Install [vcpkg](https://github.com/microsoft/vcpkg)
@@ -23,6 +24,12 @@ Get binaries from the Gihub [Releases](https://github.com/blackyblack/torrent-s3
   cd vcpkg
   ./bootstrap-vcpkg.sh
   VCPKG_ROOT=$(pwd)
+  ```
+
+- Install [gtest](https://github.com/google/googletest/tree/main)
+
+  ```sh
+  ./vcpkg install gtest
   ```
 
 - Install [minio-cpp](https://github.com/minio/minio-cpp)
@@ -102,6 +109,15 @@ Run image from [here](https://hub.docker.com/repository/docker/blackyblacky/torr
 > Hashlist allows to track torrent contents modifications. New files are synced with S3 and deleted files are removed from S3.
 
     Hashlist path example: `./torrent-s3 --hashlist-file=./tmp/.torrent_s3_hashlist`
+13. `--extract-files` or `-z` - Extract archives before uploading to S3;
+> [!NOTE]
+> 7zip, zip, rar and rar5 archives are supported.
+> Folders for extracted files are generated automatically, i.e. for `archive.zip` the folder will be `archive_zip`.
+
+> [!NOTE]
+> Limit size only applies to downloaded files. Make sure to have additional space for extracted files.
+
+    Extract archives example: `./torrent-s3 --extract-files`
 
 # Usage example
 
