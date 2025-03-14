@@ -2,7 +2,7 @@
 
 std::filesystem::path folder_for_unpacked_file(const std::filesystem::path file_name) {
     auto ext = file_name.extension().string();
-    if(ext.find_last_of(".") != std::string::npos) {
+    if (ext.find_last_of(".") != std::string::npos) {
         ext = ext.substr(ext.find_last_of(".") + 1);
     }
     return file_name.parent_path() / (file_name.stem().string() + "_" + ext);

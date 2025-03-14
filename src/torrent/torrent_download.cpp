@@ -141,7 +141,7 @@ static void download_task(
         if (stop_download) {
             std::set<unsigned int> intersect;
             std::set_intersection(requested_indexes.begin(), requested_indexes.end(), downloaded_indexes.begin(), downloaded_indexes.end(),
-                 std::inserter(intersect, intersect.begin()));
+                                  std::inserter(intersect, intersect.begin()));
             if (intersect == requested_indexes) {
                 break;
             }

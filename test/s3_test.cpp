@@ -1,7 +1,7 @@
 #include <filesystem>
 #include <gtest/gtest.h>
 #ifdef _WIN32
-    #include <windows.h>
+#include <windows.h>
 #endif // _WIN32
 
 #include "./test_utils.hpp"
@@ -9,16 +9,16 @@
 #include "../src/s3/s3.hpp"
 
 TEST(s3_test, start_stop) {
-    S3Uploader uploader(1, "http://play.min.io", "Q3AM3UQ867SPQQA43P2F", "zuf+tfteSlswRu7BJ86wekitnifILbZam1KYY3TG", "test", "", "./" , "");
+    S3Uploader uploader(1, "http://play.min.io", "Q3AM3UQ867SPQQA43P2F", "zuf+tfteSlswRu7BJ86wekitnifILbZam1KYY3TG", "test", "", "./", "");
     const auto ret = uploader.start();
     EXPECT_FALSE(ret.has_value());
     uploader.stop();
 }
 
 TEST(s3_test, bad_file) {
-    #ifdef _WIN32
-        SetConsoleOutputCP(CP_UTF8);
-    #endif // _WIN32
+#ifdef _WIN32
+    SetConsoleOutputCP(CP_UTF8);
+#endif // _WIN32
 
     S3Uploader uploader(1, "http://play.min.io", "Q3AM3UQ867SPQQA43P2F", "zuf+tfteSlswRu7BJ86wekitnifILbZam1KYY3TG", "test", "", "./", "");
     auto &progress_queue = uploader.get_progress_queue();
@@ -72,9 +72,9 @@ TEST(s3_test, use_path_from) {
 }
 
 TEST(s3_test, unicode_name) {
-    #ifdef _WIN32
-        SetConsoleOutputCP(CP_UTF8);
-    #endif // _WIN32
+#ifdef _WIN32
+    SetConsoleOutputCP(CP_UTF8);
+#endif // _WIN32
 
     const auto path_from = std::filesystem::path(SOURCE_DIR) / std::filesystem::path("test/assets");
     const auto unicode_file = std::string("Документ Microsoft Word (2).htm");

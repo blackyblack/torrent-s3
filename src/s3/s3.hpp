@@ -29,7 +29,7 @@ struct S3ProgressUploadError {
 typedef std::variant<S3ProgressUploadOk, S3ProgressUploadError> S3ProgressEvent;
 
 class S3Uploader {
-  public:
+public:
     // use default thread count (16) if thread_count is set to 0
     // path_from_ - where we store files
     // path_to_ - where to upload them
@@ -50,7 +50,7 @@ class S3Uploader {
     ThreadSafeDeque<S3ProgressEvent> &get_progress_queue();
     void new_file(const std::string &file_name);
     std::optional<std::string> delete_file(const std::string &file_name);
-  private:
+private:
     ThreadSafeDeque<S3TaskEvent> message_queue;
     ThreadSafeDeque<S3ProgressEvent> progress_queue;
     unsigned int thread_count;

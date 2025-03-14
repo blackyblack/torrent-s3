@@ -109,7 +109,7 @@ static void s3_file_upload_complete(const std::filesystem::path path_from, Linke
     const auto parent_iter = linked_files.find(parent_file_name);
 
     // if parent is still not completed, keep uploading
-    if(parent_iter != linked_files.end() && parent_iter->second.size() > 0) {
+    if (parent_iter != linked_files.end() && parent_iter->second.size() > 0) {
         return;
     }
     unfinished_files.remove_parent(parent_file_name);
@@ -122,19 +122,19 @@ int main(int argc, char const* argv[]) {
     // NOTE: non-unicode and non-ascii symbols are not supported in command line arguments.
     // Windows might use other codepage by default, so make sure to use english characters in paths.
     options.add_options()
-        ("t,torrent", "Torrent file path, HTTP URL or magnet link", cxxopts::value<std::string>())
-        ("s,s3-url", "S3 service URL", cxxopts::value<std::string>())
-        ("b,s3-bucket", "S3 bucket", cxxopts::value<std::string>())
-        ("r,s3-region", "S3 region", cxxopts::value<std::string>())
-        ("u,s3-upload-path", "S3 path to store uploaded files", cxxopts::value<std::string>())
-        ("a,s3-access-key", "S3 access key", cxxopts::value<std::string>())
-        ("k,s3-secret-key", "S3 secret key", cxxopts::value<std::string>())
-        ("d,download-path", "Temporary directory for downloaded files", cxxopts::value<std::string>())
-        ("l,limit-size", "Temporary directory maximum size in bytes", cxxopts::value<unsigned long long>())
-        ("p,hashlist-file", std::string("Path to hashlist. Default is <download-path>/") + std::string(FILE_HASHES_STORAGE_NAME), cxxopts::value<std::string>())
-        ("z,extract-files", "Extract downloaded archives before uploading")
-        ("v,version", "Show version")
-        ("h,help", "Show help");
+           ("t,torrent", "Torrent file path, HTTP URL or magnet link", cxxopts::value<std::string>())
+           ("s,s3-url", "S3 service URL", cxxopts::value<std::string>())
+           ("b,s3-bucket", "S3 bucket", cxxopts::value<std::string>())
+           ("r,s3-region", "S3 region", cxxopts::value<std::string>())
+           ("u,s3-upload-path", "S3 path to store uploaded files", cxxopts::value<std::string>())
+           ("a,s3-access-key", "S3 access key", cxxopts::value<std::string>())
+           ("k,s3-secret-key", "S3 secret key", cxxopts::value<std::string>())
+           ("d,download-path", "Temporary directory for downloaded files", cxxopts::value<std::string>())
+           ("l,limit-size", "Temporary directory maximum size in bytes", cxxopts::value<unsigned long long>())
+           ("p,hashlist-file", std::string("Path to hashlist. Default is <download-path>/") + std::string(FILE_HASHES_STORAGE_NAME), cxxopts::value<std::string>())
+           ("z,extract-files", "Extract downloaded archives before uploading")
+           ("v,version", "Show version")
+           ("h,help", "Show help");
 
     cxxopts::ParseResult args;
 
@@ -416,7 +416,7 @@ int main(int argc, char const* argv[]) {
     // note, that files with errors are removed from new hashlist after comparing with old
     // hashlist. This way we won't try to delete failed files from S3
     for (const auto &f : file_errors) {
-      hashlist.erase(f.file_name);
+        hashlist.erase(f.file_name);
     }
 
     const auto removed_files = get_removed_files(hashlist, *torrent_params.ti);

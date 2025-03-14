@@ -19,7 +19,7 @@ struct hashlist_t {
 typedef std::unordered_map<std::string, hashlist_t> file_hashlist_t;
 
 class StreamError : public std::runtime_error {
-  public:
+public:
     StreamError(std::string message);
 };
 

@@ -2,7 +2,7 @@
 #include <gtest/gtest.h>
 
 #ifdef _WIN32
-    #include <windows.h>
+#include <windows.h>
 #endif // _WIN32
 
 #include "./test_utils.hpp"
@@ -92,9 +92,9 @@ TEST(archive_test, unpack_unicode_output_name) {
     const auto filename = std::filesystem::path(SOURCE_DIR) / "test/assets/я.zip";
 
     // also test unicode console output here
-    #ifdef _WIN32
-        SetConsoleOutputCP(CP_UTF8);
-    #endif // _WIN32
+#ifdef _WIN32
+    SetConsoleOutputCP(CP_UTF8);
+#endif // _WIN32
     fprintf(stderr, "Console output. File is \"%s\"\n", filename.string().c_str());
 
     const auto ret = unpack_file(filename, std::filesystem::path(get_tmp_dir()) / "я");

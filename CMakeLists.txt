@@ -62,3 +62,10 @@ target_link_libraries(
 
 include(GoogleTest)
 gtest_discover_tests(torrent-s3-test)
+
+add_custom_target(format
+  astyle --suffix=none --recursive ./src/*.cpp ./src/*.hpp ./test/*.cpp ./test/*.hpp
+  WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+  COMMENT "Source code formatting with Astyle"
+  VERBATIM
+)

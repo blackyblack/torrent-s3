@@ -143,7 +143,7 @@ CXXOPTS_DIAGNOSTIC_PUSH
 CXXOPTS_IGNORE_WARNING("-Wnon-virtual-dtor")
 // This will be ignored under other compilers like LLVM clang.
 class UnicodeStringIterator {
-  public:
+public:
 
     using iterator_category = std::forward_iterator_tag;
     using value_type = int32_t;
@@ -182,7 +182,7 @@ class UnicodeStringIterator {
         return UnicodeStringIterator(s, i + v);
     }
 
-  private:
+private:
     const icu::UnicodeString* s;
     int32_t i;
 };
@@ -325,7 +325,7 @@ CXXOPTS_IGNORE_WARNING("-Wnon-virtual-dtor")
 // some older versions of GCC warn under this warning
 CXXOPTS_IGNORE_WARNING("-Weffc++")
 class Value : public std::enable_shared_from_this<Value> {
-  public:
+public:
 
     virtual ~Value() = default;
 
@@ -375,7 +375,7 @@ CXXOPTS_DIAGNOSTIC_POP
 namespace exceptions {
 
 class exception : public std::exception {
-  public:
+public:
     explicit exception(std::string  message)
         : m_message(std::move(message)) {
     }
@@ -386,12 +386,12 @@ class exception : public std::exception {
         return m_message.c_str();
     }
 
-  private:
+private:
     std::string m_message;
 };
 
 class specification : public exception {
-  public:
+public:
 
     explicit specification(const std::string& message)
         : exception(message) {
@@ -399,28 +399,28 @@ class specification : public exception {
 };
 
 class parsing : public exception {
-  public:
+public:
     explicit parsing(const std::string& message)
         : exception(message) {
     }
 };
 
 class option_already_exists : public specification {
-  public:
+public:
     explicit option_already_exists(const std::string& option)
         : specification("Option " + LQUOTE + option + RQUOTE + " already exists") {
     }
 };
 
 class invalid_option_format : public specification {
-  public:
+public:
     explicit invalid_option_format(const std::string& format)
         : specification("Invalid option format " + LQUOTE + format + RQUOTE) {
     }
 };
 
 class invalid_option_syntax : public parsing {
-  public:
+public:
     explicit invalid_option_syntax(const std::string& text)
         : parsing("Argument " + LQUOTE + text + RQUOTE +
                   " starts with a - but has incorrect syntax") {
@@ -428,14 +428,14 @@ class invalid_option_syntax : public parsing {
 };
 
 class no_such_option : public parsing {
-  public:
+public:
     explicit no_such_option(const std::string& option)
         : parsing("Option " + LQUOTE + option + RQUOTE + " does not exist") {
     }
 };
 
 class missing_argument : public parsing {
-  public:
+public:
     explicit missing_argument(const std::string& option)
         : parsing(
               "Option " + LQUOTE + option + RQUOTE + " is missing an argument"
@@ -444,7 +444,7 @@ class missing_argument : public parsing {
 };
 
 class option_requires_argument : public parsing {
-  public:
+public:
     explicit option_requires_argument(const std::string& option)
         : parsing(
               "Option " + LQUOTE + option + RQUOTE + " requires an argument"
@@ -453,7 +453,7 @@ class option_requires_argument : public parsing {
 };
 
 class gratuitous_argument_for_option : public parsing {
-  public:
+public:
     gratuitous_argument_for_option
     (
         const std::string& option,
@@ -468,14 +468,14 @@ class gratuitous_argument_for_option : public parsing {
 };
 
 class requested_option_not_present : public parsing {
-  public:
+public:
     explicit requested_option_not_present(const std::string& option)
         : parsing("Option " + LQUOTE + option + RQUOTE + " not present") {
     }
 };
 
 class option_has_no_value : public exception {
-  public:
+public:
     explicit option_has_no_value(const std::string& option)
         : exception(
               !option.empty() ?
@@ -485,7 +485,7 @@ class option_has_no_value : public exception {
 };
 
 class incorrect_argument_type : public parsing {
-  public:
+public:
     explicit incorrect_argument_type
     (
         const std::string& arg
@@ -989,7 +989,7 @@ template <typename T>
 class abstract_value : public Value {
     using Self = abstract_value<T>;
 
-  public:
+public:
     abstract_value()
         : m_result(std::make_shared<T>())
         , m_store(m_result.get()) {
@@ -1103,7 +1103,7 @@ class abstract_value : public Value {
         return *m_store;
     }
 
-  protected:
+protected:
     std::shared_ptr<T> m_result{};
     T* m_store{};
 
@@ -1116,7 +1116,7 @@ class abstract_value : public Value {
 
 template <typename T>
 class standard_value : public abstract_value<T> {
-  public:
+public:
     using abstract_value<T>::abstract_value;
 
     CXXOPTS_NODISCARD
@@ -1129,7 +1129,7 @@ class standard_value : public abstract_value<T> {
 
 template <>
 class standard_value<bool> : public abstract_value<bool> {
-  public:
+public:
     ~standard_value() override = default;
 
     standard_value() {
@@ -1148,7 +1148,7 @@ class standard_value<bool> : public abstract_value<bool> {
         return std::make_shared<standard_value<bool>>(*this);
     }
 
-  private:
+private:
 
     void
     set_default_and_implicit() {
@@ -1184,7 +1184,7 @@ first_or_empty(const OptionNames& long_names) {
 }
 
 class OptionDetails {
-  public:
+public:
     OptionDetails
     (
         std::string short_,
@@ -1262,7 +1262,7 @@ class OptionDetails {
         return m_hash;
     }
 
-  private:
+private:
     std::string m_short{};
     OptionNames m_long{};
     String m_desc{};
@@ -1292,7 +1292,7 @@ struct HelpGroupDetails {
 };
 
 class OptionValue {
-  public:
+public:
     void
     add
     (
@@ -1363,7 +1363,7 @@ class OptionValue {
         return CXXOPTS_RTTI_CAST<const values::standard_value<T>&>(*m_value).get();
     }
 
-  private:
+private:
     void
     ensure_value(const std::shared_ptr<const OptionDetails>& details) {
         if (m_value == nullptr) {
@@ -1381,7 +1381,7 @@ class OptionValue {
 };
 
 class KeyValue {
-  public:
+public:
     KeyValue(std::string key_, std::string value_) noexcept
         : m_key(std::move(key_))
         , m_value(std::move(value_)) {
@@ -1407,7 +1407,7 @@ class KeyValue {
         return result;
     }
 
-  private:
+private:
     std::string m_key;
     std::string m_value;
 };
@@ -1416,9 +1416,9 @@ using ParsedHashMap = std::unordered_map<std::size_t, OptionValue>;
 using NameHashMap = std::unordered_map<std::string, std::size_t>;
 
 class ParseResult {
-  public:
+public:
     class Iterator {
-      public:
+    public:
         using iterator_category = std::forward_iterator_tag;
         using value_type = KeyValue;
         using difference_type = void;
@@ -1481,7 +1481,7 @@ class ParseResult {
             return m_iter.operator->();
         }
 
-      private:
+    private:
         const ParseResult* m_pr;
         std::vector<KeyValue>::const_iterator m_iter;
         bool m_sequential = true;
@@ -1572,7 +1572,7 @@ class ParseResult {
         return result;
     }
 
-  private:
+private:
     NameHashMap m_keys{};
     ParsedHashMap m_values{};
     std::vector<KeyValue> m_sequential{};
@@ -1605,7 +1605,7 @@ using PositionalList = std::vector<std::string>;
 using PositionalListIterator = PositionalList::const_iterator;
 
 class OptionParser {
-  public:
+public:
     OptionParser(const OptionMap& options, const PositionalList& positional, bool allow_unrecognised)
         : m_options(options)
         , m_positional(positional)
@@ -1645,7 +1645,7 @@ class OptionParser {
     void
     parse_no_value(const std::shared_ptr<OptionDetails>& details);
 
-  private:
+private:
 
     void finalise_aliases();
 
@@ -1661,7 +1661,7 @@ class OptionParser {
 };
 
 class Options {
-  public:
+public:
 
     explicit Options(std::string program_name, std::string help_string = "")
         : m_program(std::move(program_name))
@@ -1787,7 +1787,7 @@ class Options {
         return m_program;
     }
 
-  private:
+private:
 
     void
     add_one_option
@@ -1828,7 +1828,7 @@ class Options {
 };
 
 class OptionAdder {
-  public:
+public:
 
     OptionAdder(Options& options, std::string group)
         : m_options(options), m_group(std::move(group)) {
@@ -1844,7 +1844,7 @@ class OptionAdder {
         std::string arg_help = ""
     );
 
-  private:
+private:
     Options& m_options;
     std::string m_group;
 };
