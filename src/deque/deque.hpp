@@ -5,7 +5,7 @@
 
 template<class T>
 class ThreadSafeDeque {
-  public:
+public:
     bool empty() const {
         return deque.empty();
     }
@@ -27,7 +27,7 @@ class ThreadSafeDeque {
         lock.unlock();
         condition.notify_one(); // wakes up pop_front_waiting
     }
-  private:
+private:
     std::deque<T> deque;
     std::mutex mutex;
     std::condition_variable condition;

@@ -67,7 +67,9 @@ void DownloadingFiles::complete_file(std::string file_name) {
 bool DownloadingFiles::is_completed() const {
     std::unordered_set<std::string> intersect;
     for (const auto f : completed_files) {
-        if (torrent_files.count(f)) { intersect.insert(f); }
+        if (torrent_files.count(f)) {
+            intersect.insert(f);
+        }
     }
     return intersect == torrent_files;
 }

@@ -28,7 +28,7 @@ struct TorrentProgressDownloadError {
 typedef std::variant<TorrentProgressDownloadOk, TorrentProgressDownloadError> TorrentProgressEvent;
 
 class TorrentDownloader {
-  public:
+public:
     TorrentDownloader(const lt::add_torrent_params& params);
 
     void start();
@@ -37,7 +37,7 @@ class TorrentDownloader {
     // progress_queue allows to receive notifications on download progress
     ThreadSafeDeque<TorrentProgressEvent> &get_progress_queue();
     void download_files(const std::vector<std::string> &files);
-  private:
+private:
     std::thread task;
     lt::add_torrent_params torrent_params;
 

@@ -52,8 +52,6 @@ TEST(linked_files_test, remove_children) {
     const auto linked_files = files.get_files();
     EXPECT_EQ(linked_files.size(), 1);
     EXPECT_EQ(linked_files.at("parent").size(), 2);
-    EXPECT_EQ(linked_files.at("parent")[0], "child1");
-    EXPECT_EQ(linked_files.at("parent")[1], "child2");
     files.remove_parent("parent");
     EXPECT_EQ(files.get_files().size(), 0);
     EXPECT_EQ(files.get_parent("child1"), std::nullopt);

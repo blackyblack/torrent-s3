@@ -9,16 +9,16 @@ void LinkedFiles::add_files(std::string parent, std::vector<std::string> files) 
 
 void LinkedFiles::remove_child(std::string child) {
     const auto parent_iter = parent_files.find(child);
-    if(parent_iter == parent_files.end()) return;
+    if (parent_iter == parent_files.end()) return;
     const auto parent = parent_iter->second;
     parent_files.erase(parent_iter);
     const auto children_iter = linked_files.find(parent);
-    if(children_iter == linked_files.end()) {     
+    if (children_iter == linked_files.end()) {
         return;
     }
     auto &children_files_ref = children_iter->second;
     const auto child_iter = children_files_ref.find(child);
-    if(child_iter == children_files_ref.end()) {
+    if (child_iter == children_files_ref.end()) {
         return;
     }
     children_files_ref.erase(child_iter);
@@ -30,10 +30,10 @@ void LinkedFiles::remove_child(std::string child) {
 
 void LinkedFiles::remove_parent(std::string parent) {
     const auto children_iter = linked_files.find(parent);
-    if(children_iter == linked_files.end()) return;
+    if (children_iter == linked_files.end()) return;
     for (const auto child : children_iter->second) {
         const auto parent_iter = parent_files.find(child);
-        if(parent_iter == parent_files.end()) continue;;
+        if (parent_iter == parent_files.end()) continue;;
         parent_files.erase(parent_iter);
     }
     linked_files.erase(children_iter);

@@ -59,5 +59,4 @@ CMakeCache.txt
 CMakeUserPresets.json
 build/
 CMakeFiles/
-*.torrent
 download/
