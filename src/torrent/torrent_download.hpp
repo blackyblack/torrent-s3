@@ -1,5 +1,6 @@
 #pragma once
 
+#include <thread>
 #include <variant>
 #include <libtorrent/add_torrent_params.hpp>
 #include <libtorrent/torrent_info.hpp>
