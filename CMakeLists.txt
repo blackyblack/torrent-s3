@@ -13,9 +13,10 @@ find_package(LibtorrentRasterbar REQUIRED)
 find_package(CURL REQUIRED)
 find_package(miniocpp REQUIRED)
 find_package(LibArchive REQUIRED)
+find_package(unofficial-sqlite3 CONFIG REQUIRED)
 
-list(APPEND APP_LIBS ${CURL_LIBRARIES} LibtorrentRasterbar::torrent-rasterbar miniocpp::miniocpp LibArchive::LibArchive)
-list(APPEND APP_INCLUDES ${CURL_INCLUDE_DIRS} LibtorrentRasterbar::torrent-rasterbar miniocpp::miniocpp LibArchive::LibArchive)
+list(APPEND APP_LIBS ${CURL_LIBRARIES} LibtorrentRasterbar::torrent-rasterbar miniocpp::miniocpp LibArchive::LibArchive unofficial::sqlite3::sqlite3)
+list(APPEND APP_INCLUDES ${CURL_INCLUDE_DIRS} LibtorrentRasterbar::torrent-rasterbar miniocpp::miniocpp LibArchive::LibArchive unofficial::sqlite3::sqlite3)
 
 add_library (${PROJECT_NAME}_objects OBJECT
     src/torrent/torrent_download.cpp
@@ -25,6 +26,8 @@ add_library (${PROJECT_NAME}_objects OBJECT
     src/linked_files/linked_files.cpp
     src/downloading_files/downloading_files.cpp
     src/path/path_utils.cpp
+    src/db/sqlite.cpp
+    src/app_state/state.cpp
 )
 target_include_directories(${PROJECT_NAME}_objects PRIVATE ${APP_INCLUDES})
 target_link_libraries(${PROJECT_NAME}_objects PRIVATE ${APP_LIBS})
@@ -49,6 +52,7 @@ add_executable(
     test/s3_test.cpp
     test/downloading_files_test.cpp
     test/linked_files_test.cpp
+    test/app_state_test.cpp
 )
 
 target_include_directories(${PROJECT_NAME}-test PRIVATE ${APP_INCLUDES})
