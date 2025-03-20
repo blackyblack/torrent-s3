@@ -8,6 +8,7 @@
 
 #include <libtorrent/add_torrent_params.hpp>
 #include <libtorrent/magnet_uri.hpp>
+#include <sqlite3.h>
 
 #include "./deque/deque.hpp"
 #include "./torrent/torrent_download.hpp"
@@ -19,6 +20,8 @@
 #include "./linked_files/linked_files.hpp"
 #include "./downloading_files/downloading_files.hpp"
 #include "./path/path_utils.hpp"
+#include "./db/sqlite.hpp"
+#include "./app_state/state.hpp"
 
 #define STRING(x) #x
 #define XSTRING(x) STRING(x)
@@ -92,28 +95,37 @@ static std::string strip_prefix(const std::string &from, const std::string &pref
     return from.find(prefix) == 0 ? from.substr(prefix.size()) : from;
 }
 
-static void s3_file_upload_complete(const std::filesystem::path path_from, LinkedFiles &folders, const std::string relative_filename, DownloadingFiles &downloading_files, LinkedFiles &unfinished_files) {
-    delete_child(folders, relative_filename, path_from);
+std::unordered_set<std::string> filter_complete_files(const std::unordered_set<std::string>& files, const AppState &state) {
+    std::unordered_set<std::string> ret;
+    for (const auto &f : files) {
+        const auto status = state.get_file_status(f);
+        if (status != file_status_t::FILE_STATUS_READY) {
+            ret.insert(f);
+        }
+    }
+    return ret;
+}
 
-    const auto parent = unfinished_files.get_parent(relative_filename);
+static void s3_file_upload_complete(const std::filesystem::path path_from, LinkedFiles &folders, const std::string relative_filename, DownloadingFiles &downloading_files, AppState &state) {
+    const auto parent = get_uploading_parent(state, relative_filename);
+
+    delete_child(folders, relative_filename, path_from);
+    state.file_complete(relative_filename);
     if (!parent.has_value()) {
-        unfinished_files.remove_parent(relative_filename);
         downloading_files.complete_file(relative_filename);
         return;
     }
 
     const auto parent_file_name = parent.value();
-    unfinished_files.remove_child(relative_filename);
-
-    const auto linked_files = unfinished_files.get_files();
+    const auto linked_files = state.get_uploading_files();
     const auto parent_iter = linked_files.find(parent_file_name);
 
     // if parent is still not completed, keep uploading
     if (parent_iter != linked_files.end() && parent_iter->second.size() > 0) {
         return;
     }
-    unfinished_files.remove_parent(parent_file_name);
     downloading_files.complete_file(parent_file_name);
+    state.file_complete(parent_file_name);
 }
 
 int main(int argc, char const* argv[]) {
@@ -251,6 +263,13 @@ int main(int argc, char const* argv[]) {
         fprintf(stdout, "Downloading from %s to temporary directory \"%s\" with size limit %.3f MB\n", what.c_str(), download_path.c_str(), ((double) limit_size_bytes) / 1024 / 1024);
     }
 
+    const auto db_open_ret = db_open(":memory:");
+    if (std::holds_alternative<std::string>(db_open_ret)) {
+        fprintf(stderr, "Failed to open SQLite database: %s\n", std::get<std::string>(db_open_ret).c_str());
+        return EXIT_FAILURE;
+    }
+    const auto db = std::get<std::shared_ptr<sqlite3>>(db_open_ret);
+
     lt::add_torrent_params torrent_params;
     torrent_params.save_path = download_path;
 
@@ -285,6 +304,7 @@ int main(int argc, char const* argv[]) {
     }
 
     file_hashlist_t hashlist;
+    // TODO: load hashlist from db
     try {
         hashlist = load_hashlist(hashlist_path.string());
     } catch (StreamError &e) {
@@ -298,16 +318,18 @@ int main(int argc, char const* argv[]) {
         return EXIT_FAILURE;
     }
 
-    const auto new_files_set = get_updated_files(hashlist, *torrent_params.ti);
-    // TODO: check if files have not been deleted from S3
+    AppState app_state(db, true);
 
-    std::vector new_files(new_files_set.begin(), new_files_set.end());
+    const auto new_files_set = get_updated_files(hashlist, *torrent_params.ti);
+    const auto new_files_set_filtered = filter_complete_files(new_files_set, app_state);
+    // TODO: check if files have been deleted from S3
+
+    std::vector new_files(new_files_set_filtered.begin(), new_files_set_filtered.end());
     DownloadingFiles downloading_files(*torrent_params.ti, new_files, limit_size_bytes);
     const auto next_chunk = downloading_files.download_next_chunk();
-    LinkedFiles linked_files;
-    LinkedFiles unfinished_files;
     // use this struct to track empty folders
     LinkedFiles folders;
+    bool has_uploading_files = false;
 
     populate_folders(folders, new_files);
 
@@ -320,7 +342,7 @@ int main(int argc, char const* argv[]) {
     std::vector<file_upload_error_t> file_errors;
     bool download_error = false;
     while(true) {
-        if ((downloading_files.is_completed() || download_error) && unfinished_files.get_files().size() == 0) break;
+        if ((downloading_files.is_completed() || download_error) && !has_uploading_files) break;
         while (!download_progress.empty()) {
             const auto torrent_event = download_progress.pop_front_waiting();
             if (std::holds_alternative<TorrentProgressDownloadError>(torrent_event)) {
@@ -365,15 +387,18 @@ int main(int argc, char const* argv[]) {
                     populate_folders(folders, linked_file_names);
                 }
             }
-            linked_files.add_files(torrent_file_downloaded.file_name, linked_file_names);
-            unfinished_files.add_files(torrent_file_downloaded.file_name, linked_file_names);
+            app_state.add_files(torrent_file_downloaded.file_name, linked_file_names);
             // upload parent file if linked files are empty
             if (linked_file_names.empty()) {
+                has_uploading_files = true;
+                app_state.file_upload(torrent_file_downloaded.file_name);
                 s3_uploader.new_file(torrent_file_downloaded.file_name);
                 continue;
             }
             // upload linked files
             for (const auto &f: linked_file_names) {
+                has_uploading_files = true;
+                app_state.file_upload(f);
                 s3_uploader.new_file(f);
             }
             continue;
@@ -385,18 +410,25 @@ int main(int argc, char const* argv[]) {
                 fprintf(stderr, "Error during uploading files to S3: %s\n", s3_error.error.c_str());
                 file_errors.push_back(file_upload_error_t { s3_error.file_name, s3_error.error });
                 // process as completed to avoid infinite loop
-                s3_file_upload_complete(download_path, folders, s3_error.file_name, downloading_files, unfinished_files);
+                s3_file_upload_complete(download_path, folders, s3_error.file_name, downloading_files, app_state);
+                if (app_state.get_uploading_files().empty()) {
+                    has_uploading_files = false;
+                }
                 continue;
             }
             const auto s3_file_uploaded = std::get<S3ProgressUploadOk>(s3_event);
 
-            s3_file_upload_complete(download_path, folders, s3_file_uploaded.file_name, downloading_files, unfinished_files);
+            s3_file_upload_complete(download_path, folders, s3_file_uploaded.file_name, downloading_files, app_state);
+            if (app_state.get_uploading_files().empty()) {
+                has_uploading_files = false;
+            }
 
             if (download_error) {
                 continue;
             }
             // if some linked files are not uploaded yet, don't start next download
-            if (unfinished_files.get_parent(s3_file_uploaded.file_name).has_value()) {
+            const auto maybe_parent = get_uploading_parent(app_state, s3_file_uploaded.file_name);
+            if (maybe_parent.has_value()) {
                 continue;
             }
             // check for completed downloads only on S3 events for optimization purpose
@@ -441,7 +473,7 @@ int main(int argc, char const* argv[]) {
     }
 
     // save updated hashlist
-    auto new_hashlist = create_hashlist(*torrent_params.ti, linked_files.get_files());
+    auto new_hashlist = create_hashlist(*torrent_params.ti, app_state.get_linked_files());
     // remove files with errors from hashlist
     for (const auto &f : file_errors) {
         new_hashlist.erase(f.file_name);
