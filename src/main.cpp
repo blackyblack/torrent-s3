@@ -107,7 +107,7 @@ std::unordered_set<std::string> filter_complete_files(const std::unordered_set<s
 }
 
 static void s3_file_upload_complete(const std::filesystem::path path_from, LinkedFiles &folders, const std::string relative_filename, DownloadingFiles &downloading_files, AppState &state) {
-    const auto parent = get_uploading_parent(state, relative_filename);
+    const auto parent = state.get_uploading_parent(relative_filename);
 
     delete_child(folders, relative_filename, path_from);
     state.file_complete(relative_filename);
@@ -387,18 +387,16 @@ int main(int argc, char const* argv[]) {
                     populate_folders(folders, linked_file_names);
                 }
             }
-            app_state.add_files(torrent_file_downloaded.file_name, linked_file_names);
+            app_state.add_uploading_files(torrent_file_downloaded.file_name, linked_file_names);
             // upload parent file if linked files are empty
             if (linked_file_names.empty()) {
                 has_uploading_files = true;
-                app_state.file_upload(torrent_file_downloaded.file_name);
                 s3_uploader.new_file(torrent_file_downloaded.file_name);
                 continue;
             }
             // upload linked files
             for (const auto &f: linked_file_names) {
                 has_uploading_files = true;
-                app_state.file_upload(f);
                 s3_uploader.new_file(f);
             }
             continue;
@@ -427,7 +425,7 @@ int main(int argc, char const* argv[]) {
                 continue;
             }
             // if some linked files are not uploaded yet, don't start next download
-            const auto maybe_parent = get_uploading_parent(app_state, s3_file_uploaded.file_name);
+            const auto maybe_parent = app_state.get_uploading_parent(s3_file_uploaded.file_name);
             if (maybe_parent.has_value()) {
                 continue;
             }
@@ -473,7 +471,7 @@ int main(int argc, char const* argv[]) {
     }
 
     // save updated hashlist
-    auto new_hashlist = create_hashlist(*torrent_params.ti, app_state.get_linked_files());
+    auto new_hashlist = create_hashlist(*torrent_params.ti, app_state.get_completed_files());
     // remove files with errors from hashlist
     for (const auto &f : file_errors) {
         new_hashlist.erase(f.file_name);
