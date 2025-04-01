@@ -37,6 +37,7 @@ public:
     // progress_queue allows to receive notifications on download progress
     ThreadSafeDeque<TorrentProgressEvent> &get_progress_queue();
     void download_files(const std::vector<std::string> &files);
+    lt::torrent_info get_torrent_info() const;
 private:
     std::thread task;
     lt::add_torrent_params torrent_params;

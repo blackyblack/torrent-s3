@@ -1,4 +1,5 @@
 cmake_minimum_required(VERSION 3.16.3)
+cmake_policy(SET CMP0167 NEW)
 
 project(torrent-s3 VERSION 1.1.0)
 
@@ -28,6 +29,7 @@ add_library (${PROJECT_NAME}_objects OBJECT
     src/path/path_utils.cpp
     src/db/sqlite.cpp
     src/app_state/state.cpp
+    src/app_sync/sync.cpp
 )
 target_include_directories(${PROJECT_NAME}_objects PRIVATE ${APP_INCLUDES})
 target_link_libraries(${PROJECT_NAME}_objects PRIVATE ${APP_LIBS})
@@ -53,6 +55,7 @@ add_executable(
     test/downloading_files_test.cpp
     test/linked_files_test.cpp
     test/app_state_test.cpp
+    test/app_sync_test.cpp
 )
 
 target_include_directories(${PROJECT_NAME}-test PRIVATE ${APP_INCLUDES})

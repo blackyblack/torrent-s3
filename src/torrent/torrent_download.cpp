@@ -238,3 +238,7 @@ void TorrentDownloader::download_files(const std::vector<std::string> &files) {
         message_queue.push_back(TorrentTaskEventNewFile { f });
     }
 }
+
+lt::torrent_info TorrentDownloader::get_torrent_info() const {
+    return *torrent_params.ti;
+}
