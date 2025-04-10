@@ -15,12 +15,10 @@ TEST(app_sync_test, basic_check) {
     const auto path = std::filesystem::canonical(get_asset("starwars.torrent"));
     torrent_params.ti = std::make_shared<lt::torrent_info>(path.string());
     auto torrent_downloader = std::make_shared<TorrentDownloader>(torrent_params);
-    // in this test we start with empty hashlist
-    file_hashlist_t hashlist;
     const auto ti = torrent_downloader->get_torrent_info();
-    const auto new_files_set = get_updated_files(hashlist, *torrent_params.ti);
     const auto test_file_name = "Star Wars books\\jq_07_tmot.jpg";
-    for (const auto &f : new_files_set) {
+    for (const auto &i : torrent_params.ti->files().file_range()) {
+        const auto f = torrent_params.ti->files().file_path(i);
         app_state->add_uploading_files(f, {});
         if (f == test_file_name) {
             continue;
@@ -34,7 +32,6 @@ TEST(app_sync_test, basic_check) {
         app_state,
         s3_uploader,
         torrent_downloader,
-        hashlist,
         LLONG_MAX,
         download_path,
         false
@@ -56,18 +53,17 @@ TEST(app_sync_test, restore_state) {
     const auto path = std::filesystem::canonical(get_asset("starwars.torrent"));
     torrent_params.ti = std::make_shared<lt::torrent_info>(path.string());
     auto torrent_downloader = std::make_shared<TorrentDownloader>(torrent_params);
-    // in this test we start with empty hashlist
-    file_hashlist_t hashlist;
     const auto ti = torrent_downloader->get_torrent_info();
-    const auto new_files_set = get_updated_files(hashlist, *torrent_params.ti);
     const auto test_file_names = std::unordered_set<std::string>({"Star Wars books\\jq_07_tmot.jpg", "Star Wars books\\bhw_2_ss.jpg"});
-    for (const auto &f : new_files_set) {
+    for (const auto &i : torrent_params.ti->files().file_range()) {
+        const auto f = torrent_params.ti->files().file_path(i);
         app_state->add_uploading_files(f, {});
         if (test_file_names.count(f) > 0) {
             continue;
         }
         app_state->file_complete(f);
     }
+
     for (const auto &f : test_file_names) {
         EXPECT_EQ(s3_uploader->delete_file(f), std::nullopt);
         EXPECT_FALSE(std::get<bool>(s3_uploader->is_file_existing(f)));
@@ -77,7 +73,6 @@ TEST(app_sync_test, restore_state) {
         app_state,
         s3_uploader,
         torrent_downloader,
-        hashlist,
         LLONG_MAX,
         download_path,
         false
@@ -108,6 +103,15 @@ TEST(app_sync_test, restore_state) {
             break;
         }
     }
+    app_sync.process_deleted_files();
+    app_sync.update_hashlist();
+
+    // now hashlist should be updated
+    auto hashlist = app_state->get_hashlist();
+    // hashlist contains all completed files
+    EXPECT_EQ(hashlist.size(), 320);
+    EXPECT_TRUE(hashlist.at(uploaded_file_name).hashes.size() > 0);
+
     auto file_errors = app_sync.stop();
     EXPECT_EQ(file_errors.size(), 0);
     EXPECT_TRUE(std::get<bool>(s3_uploader->is_file_existing(uploaded_file_name)));
@@ -117,14 +121,11 @@ TEST(app_sync_test, restore_state) {
     torrent_params_restored.save_path = download_path;
     torrent_params_restored.ti = std::make_shared<lt::torrent_info>(path.string());
     torrent_downloader = std::make_shared<TorrentDownloader>(torrent_params_restored);
-    // in this test we start with empty hashlist
-    file_hashlist_t hashlist_restored;
 
     AppSync app_sync_restored(
         app_state,
         s3_uploader,
         torrent_downloader,
-        hashlist_restored,
         LLONG_MAX,
         download_path,
         false
@@ -136,5 +137,11 @@ TEST(app_sync_test, restore_state) {
 
     for (const auto &f : test_file_names) {
         EXPECT_TRUE(std::get<bool>(s3_uploader->is_file_existing(f)));
+    }
+
+    hashlist = app_state->get_hashlist();
+    EXPECT_EQ(hashlist.size(), 320);
+    for (const auto &f : test_file_names) {
+        EXPECT_TRUE(hashlist.at(f).hashes.size() > 0);
     }
 }

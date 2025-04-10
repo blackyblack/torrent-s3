@@ -45,3 +45,5 @@ private:
     ThreadSafeDeque<TorrentTaskEvent> message_queue;
     ThreadSafeDeque<TorrentProgressEvent> progress_queue;
 };
+
+std::vector<std::string> get_file_hashes(const lt::torrent_info &torrent, std::string file_name);

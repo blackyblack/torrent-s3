@@ -65,3 +65,16 @@ TEST(app_state_test, mark_complete) {
     EXPECT_EQ(completed_files.size(), 1);
     EXPECT_EQ(completed_files.at("parent").size(), 1);
 }
+
+TEST(app_state_test, hashlist_save_load) {
+    const auto maybe_db = db_open(":memory:");
+    const auto db = std::get<std::shared_ptr<sqlite3>>(maybe_db);
+    AppState state(db, true);
+    const auto empty_hashlist = state.get_hashlist();
+    EXPECT_EQ(empty_hashlist.size(), 0);
+    state.save_hashlist({{"file1", {{"hash1", "hash2"}, {"file3"}}}, {"file2", {{"hash3"}, {}}}});
+    const auto hashlist = state.get_hashlist();
+    EXPECT_EQ(hashlist.size(), 2);
+    EXPECT_EQ(hashlist.at("file1").hashes.size(), 2);
+    EXPECT_EQ(hashlist.at("file1").linked_files.size(), 1);
+}

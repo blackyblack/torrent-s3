@@ -44,6 +44,12 @@ Get binaries from the Gihub [Releases](https://github.com/blackyblack/torrent-s3
   ./vcpkg install libtorrent
   ```
 
+  - Install [sqlite3](https://sqlite.org/)
+
+  ```sh
+  ./vcpkg install sqlite3
+  ```
+
 - Download torrent-s3 source
 
   ```sh
@@ -104,12 +110,7 @@ Run image from [here](https://hub.docker.com/repository/docker/blackyblacky/torr
 > the limit.
 
     Limit size example: `./torrent-s3 --limit-size=50000000`
-12. `--hashlist-file` or `-p` - Path for hashlist file storage. Hashlist is stored in `.torrent_s3_hashlist`, if not set;
-> [!NOTE]
-> Hashlist allows to track torrent contents modifications. New files are synced with S3 and deleted files are removed from S3.
-
-    Hashlist path example: `./torrent-s3 --hashlist-file=./tmp/.torrent_s3_hashlist`
-13. `--extract-files` or `-z` - Extract archives before uploading to S3;
+12. `--extract-files` or `-x` - Extract archives before uploading to S3;
 > [!NOTE]
 > 7zip, zip, rar and rar5 archives are supported.
 > Folders for extracted files are generated automatically, i.e. for `archive.zip` the folder will be `archive_zip`.
@@ -118,6 +119,15 @@ Run image from [here](https://hub.docker.com/repository/docker/blackyblacky/torr
 > Limit size only applies to downloaded files. Make sure to have additional space for extracted files.
 
     Extract archives example: `./torrent-s3 --extract-files`
+13. `--state-file` or `-q` - Path for application state SQLite database. Application state is stored in `<download-path>/default.sqlite`, if not set. Set  `--state-file=:memory:` to use in-memory storage;
+> [!NOTE]
+> Application state allows to track torrent contents modifications. New files are synced with S3 and deleted files are removed from S3. Also sync process can be terminated at any moment and resumed later.
+
+> [!NOTE]
+> Since sync process works in `mirror` mode, i.e. adds to S3 all files from .torrent file and removes all files, which are not in file, different torrent files should be synced
+> with different states. For example, run sync for `torrent_a` with `./torrent-s3 --state-file=./tmp/torrent_a.sqlite` and for `torrent_b` with `./torrent-s3 --state-file=./tmp/torrent_b.sqlite`.
+
+    Application state example: `./torrent-s3 --state-file=./tmp/default.sqlite`
 
 # Usage example
 

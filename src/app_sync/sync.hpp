@@ -10,7 +10,6 @@
 #include "../downloading_files/downloading_files.hpp"
 #include "../torrent/torrent_download.hpp"
 #include "../linked_files/linked_files.hpp"
-#include "../hashlist/hashlist.hpp"
 
 struct file_upload_error_t {
     std::string file_name;
@@ -25,7 +24,6 @@ public:
         std::shared_ptr<AppState> app_state_,
         std::shared_ptr<S3Uploader> s3_uploader_,
         std::shared_ptr<TorrentDownloader> torrent_downloader_,
-        file_hashlist_t hashlist_,
         unsigned long long limit_size_bytes,
         std::string download_path_,
         bool extract_files_);
@@ -54,18 +52,25 @@ public:
     // update state after failed uploading file to s3
     void process_s3_file_error(std::string file_name, std::string error_message);
 
+    void process_deleted_files();
+
+    void update_hashlist();
+
     // true if sync is completed
     bool is_completed() const;
-        
+
+protected:
+    void init_downloading();
+
 private:
     std::shared_ptr<AppState> app_state;
     std::shared_ptr<DownloadingFiles> downloading_files;
     std::shared_ptr<LinkedFiles> folders;
     std::shared_ptr<S3Uploader> s3_uploader;
     std::shared_ptr<TorrentDownloader> torrent_downloader;
-    file_hashlist_t hashlist;
     std::string download_path;
     bool extract_files;
+    unsigned long long limit_size;
     bool download_error;
     bool has_uploading_files;
     std::vector<file_upload_error_t> file_errors;

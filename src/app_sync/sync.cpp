@@ -38,47 +38,52 @@ static std::string strip_prefix(const std::string &from, const std::string &pref
     return from.find(prefix) == 0 ? from.substr(prefix.size()) : from;
 }
 
-AppSync::AppSync(
-    std::shared_ptr<AppState> app_state_,
-    std::shared_ptr<S3Uploader> s3_uploader_,
-    std::shared_ptr<TorrentDownloader> torrent_downloader_,
-    file_hashlist_t hashlist_,
-    unsigned long long limit_size_bytes,
-    std::string download_path_,
-    bool extract_files_) :
-    app_state {app_state_},
-    s3_uploader {s3_uploader_},
-    torrent_downloader {torrent_downloader_},
-    hashlist {hashlist_},
-    download_path {download_path_},
-    extract_files {extract_files_},
-    download_error {false},
-    has_uploading_files {false},
-    file_errors {}
-{
+void AppSync::init_downloading() {
     const auto ti = torrent_downloader->get_torrent_info();
-    // TODO: load hashlist from db
-    const auto new_files_set = get_updated_files(hashlist, ti);
+    const auto new_files_set = get_updated_files(ti, app_state->get_hashlist());
     const auto new_files_set_filtered = filter_complete_files(new_files_set, *app_state);
     // TODO: check if files have been deleted from S3
     // TODO: erase updated files from the state
 
     std::vector new_files(new_files_set_filtered.begin(), new_files_set_filtered.end());
 
-    downloading_files = std::make_shared<DownloadingFiles>(ti, new_files, limit_size_bytes);
+    downloading_files = std::make_shared<DownloadingFiles>(ti, new_files, limit_size);
     folders = std::make_shared<LinkedFiles>();
     populate_folders(*folders, new_files);
+
+    download_error = false;
+    has_uploading_files = false;
+    file_errors.clear();
+}
+
+AppSync::AppSync(
+    std::shared_ptr<AppState> app_state_,
+    std::shared_ptr<S3Uploader> s3_uploader_,
+    std::shared_ptr<TorrentDownloader> torrent_downloader_,
+    unsigned long long limit_size_bytes,
+    std::string download_path_,
+    bool extract_files_) :
+    app_state {app_state_},
+    s3_uploader {s3_uploader_},
+    torrent_downloader {torrent_downloader_},
+    download_path {download_path_},
+    extract_files {extract_files_},
+    limit_size {limit_size_bytes},
+    download_error {false},
+    has_uploading_files {false},
+    file_errors {}
+{
+    init_downloading();
 }
 
 std::optional<std::string> AppSync::start() {
+    init_downloading();
+
     torrent_downloader->start();
     const auto s3_start_ret = s3_uploader->start();
     if (s3_start_ret.has_value()) {
         return s3_start_ret.value();
     }
-    download_error = false;
-    has_uploading_files = false;
-    file_errors.clear();
     const auto chunk = downloading_files->download_next_chunk();
     torrent_downloader->download_files(chunk);
     return std::nullopt;
@@ -125,6 +130,10 @@ std::variant<std::string, std::vector<file_upload_error_t>> AppSync::full_sync()
             continue;
         }
     }
+
+    fprintf(stdout, "Downloading torrent completed\n");
+    process_deleted_files();
+    update_hashlist();
     return stop();
 }
 
@@ -266,4 +275,42 @@ void AppSync::process_s3_file_error(std::string file_name, std::string error_mes
 
 bool AppSync::is_completed() const {
     return (downloading_files->is_completed() || download_error) && !has_uploading_files;
+}
+
+void AppSync::process_deleted_files() {
+    auto hashlist = app_state->get_hashlist();
+
+    for (const auto &f : file_errors) {
+        hashlist.erase(f.file_name);
+    }
+
+    const auto ti = torrent_downloader->get_torrent_info();
+    const auto removed_files = get_removed_files(ti, hashlist);
+
+    for (const auto &f: removed_files) {
+        // This file is a parent file - remove linked files
+        for (const auto &linked_file: hashlist[f].linked_files) {
+            const auto delete_file_ret = s3_uploader->delete_file(linked_file);
+            if (delete_file_ret.has_value()) {
+                const auto file_name_full = std::filesystem::path(download_path) / linked_file;
+                fprintf(stderr, "Could not delete file \"%s\" from S3. Error: %s\n", file_name_full.string().c_str(), delete_file_ret.value().c_str());
+            }
+        }
+        // This file was deleted - remove from S3
+        const auto delete_file_ret = s3_uploader->delete_file(f);
+        if (delete_file_ret.has_value()) {
+            const auto file_name_full = std::filesystem::path(download_path) / f;
+            fprintf(stderr, "Could not delete file \"%s\" from S3. Error: %s\n", file_name_full.string().c_str(), delete_file_ret.value().c_str());
+        }
+    }
+}
+
+void AppSync::update_hashlist() {
+    const auto ti = torrent_downloader->get_torrent_info();
+    auto new_hashlist = create_hashlist(ti, app_state->get_completed_files());
+    // remove files with errors from hashlist
+    for (const auto &f : file_errors) {
+        new_hashlist.erase(f.file_name);
+    }
+    app_state->save_hashlist(new_hashlist);
 }
