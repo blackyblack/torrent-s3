@@ -88,7 +88,7 @@ int main(int argc, char const* argv[]) {
     if (args.count("limit-size")) {
         limit_size_bytes = args["limit-size"].as<unsigned long long>();
     }
-    auto app_state_path = std::filesystem::path(download_path) / std::filesystem::path(STATE_STORAGE_NAME);
+    auto app_state_path = (std::filesystem::path(download_path) / std::filesystem::path(STATE_STORAGE_NAME)).string();
     if (args.count("state-file")) {
         app_state_path = args["state-file"].as<std::string>();
     }
@@ -169,7 +169,7 @@ int main(int argc, char const* argv[]) {
         fprintf(stdout, "Downloading from %s to temporary directory \"%s\" with size limit %.3f MB\n", what.c_str(), download_path.c_str(), ((double) limit_size_bytes) / 1024 / 1024);
     }
 
-    const auto db_open_ret = db_open(app_state_path.string());
+    const auto db_open_ret = db_open(app_state_path);
     if (std::holds_alternative<std::string>(db_open_ret)) {
         fprintf(stderr, "Failed to open SQLite database: %s\n", std::get<std::string>(db_open_ret).c_str());
         return EXIT_FAILURE;
@@ -209,7 +209,7 @@ int main(int argc, char const* argv[]) {
         torrent_params.ti = std::make_shared<lt::torrent_info>(std::get<lt::torrent_info>(torrent_content_ret));
     }
 
-    auto app_state = std::make_shared<AppState>(db, true);
+    auto app_state = std::make_shared<AppState>(db, false);
     auto s3_uploader = std::make_shared<S3Uploader>(0, s3_url, s3_access_key, s3_secret_key, s3_bucket, s3_region, download_path, upload_path);
     auto torrent_downloader = std::make_shared<TorrentDownloader>(torrent_params);
     AppSync app_sync(

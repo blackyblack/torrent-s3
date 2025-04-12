@@ -27,7 +27,7 @@ public:
         unsigned long long limit_size_bytes,
         std::string download_path_,
         bool extract_files_);
-    
+
     // start sync by selecting next chunk and downloading it
     // optionally returns an error
     std::optional<std::string> start();
@@ -39,7 +39,7 @@ public:
     // starts sync, waits for completion and stops
     // either returns an error or a list of errors
     std::variant<std::string, std::vector<file_upload_error_t>> full_sync();
-    
+
     // update state after downloading file from a torrent
     void process_torrent_file(std::string file_name);
 

@@ -34,7 +34,7 @@ public:
     std::unordered_map<std::string, std::vector<std::string>> get_uploading_files() const;
     std::unordered_map<std::string, std::vector<std::string>> get_completed_files() const;
     file_hashlist_t get_hashlist() const;
-    
+
 private:
     std::shared_ptr<sqlite3> db;
 };

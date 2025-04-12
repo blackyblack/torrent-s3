@@ -103,14 +103,8 @@ TEST(app_sync_test, restore_state) {
             break;
         }
     }
-    app_sync.process_deleted_files();
-    app_sync.update_hashlist();
 
-    // now hashlist should be updated
-    auto hashlist = app_state->get_hashlist();
-    // hashlist contains all completed files
-    EXPECT_EQ(hashlist.size(), 320);
-    EXPECT_TRUE(hashlist.at(uploaded_file_name).hashes.size() > 0);
+    // assume sync was stopped forcefully so hashlist should not be updated
 
     auto file_errors = app_sync.stop();
     EXPECT_EQ(file_errors.size(), 0);
@@ -139,8 +133,8 @@ TEST(app_sync_test, restore_state) {
         EXPECT_TRUE(std::get<bool>(s3_uploader->is_file_existing(f)));
     }
 
-    hashlist = app_state->get_hashlist();
-    EXPECT_EQ(hashlist.size(), 320);
+    const auto hashlist = app_state->get_hashlist();
+    EXPECT_EQ(hashlist.size(), 502);
     for (const auto &f : test_file_names) {
         EXPECT_TRUE(hashlist.at(f).hashes.size() > 0);
     }

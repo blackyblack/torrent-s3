@@ -25,7 +25,26 @@ std::unordered_set<std::string> get_updated_files(const lt::torrent_info &torren
             loaded_file_hashes = hashlist.at(file_name).hashes;
         }
         const auto torrent_file_hashes = get_file_hashes(torrent, file_name);
-        if (torrent_file_hashes != loaded_file_hashes) {
+        const auto torrent_hashes_size = torrent_file_hashes.size();
+        const auto loaded_hashes_size = loaded_file_hashes.size();
+        if (torrent_hashes_size != loaded_hashes_size) {
+            new_files.insert(file_name);
+            continue;
+        }
+        bool is_equal = true;
+        for (auto i = 0; i < torrent_hashes_size; i++) {
+            const auto hash1 = torrent_file_hashes[i];
+            const auto hash2 = loaded_file_hashes[i];
+            if (hash1.size() != hash2.size()) {
+                is_equal = false;
+                break;
+            }
+            if (std::memcmp(hash1.data(), hash2.data(), hash1.size()) != 0) {
+                is_equal = false;
+                break;
+            }
+        }
+        if (!is_equal) {
             new_files.insert(file_name);
         }
     }

@@ -107,12 +107,20 @@ AppState::AppState(std::shared_ptr<sqlite3> db_, bool reset) : db {db_} {
         throw std::runtime_error("Failed to create table: " + err_msg_str);
     }
 
-    create_table_query = std::string("CREATE TABLE IF NOT EXISTS ") + HASHLIST_TABLE_NAME + " (piece_hash TEXT PRIMARY KEY, file TEXT NOT NULL);";
+    create_table_query = std::string("CREATE TABLE IF NOT EXISTS ") + HASHLIST_TABLE_NAME + " (id INTEGER PRIMARY KEY, file TEXT NOT NULL, piece_hash BLOB NOT NULL);";
     rc = sqlite3_exec(db.get(), create_table_query.c_str(), nullptr, nullptr, &err_msg);
     if (rc != SQLITE_OK) {
         const auto err_msg_str = std::string(err_msg);
         sqlite3_free(err_msg);
         throw std::runtime_error("Failed to create table: " + err_msg_str);
+    }
+
+    const auto create_index_query = std::string("CREATE INDEX IF NOT EXISTS ") + HASHLIST_TABLE_NAME + "_file_idx ON " + HASHLIST_TABLE_NAME + " (file);";
+    rc = sqlite3_exec(db.get(), create_index_query.c_str(), nullptr, nullptr, &err_msg);
+    if (rc != SQLITE_OK) {
+        const auto err_msg_str = std::string(err_msg);
+        sqlite3_free(err_msg);
+        throw std::runtime_error("Failed to create index: " + err_msg_str);
     }
 
     create_table_query = std::string("CREATE TABLE IF NOT EXISTS ") + HASHLIST_LINKED_FILES_TABLE_NAME + " (file TEXT PRIMARY KEY, parent TEXT NOT NULL);";
@@ -324,7 +332,7 @@ void AppState::save_hashlist(file_hashlist_t hashlist) {
         const auto &name = f.first;
         const auto &hashes = f.second.hashes;
 
-        const auto insert_hashes_query = std::string("INSERT OR IGNORE INTO ") + HASHLIST_TABLE_NAME + " (piece_hash, file) VALUES (?, ?);";
+        const auto insert_hashes_query = std::string("INSERT OR IGNORE INTO ") + HASHLIST_TABLE_NAME + " (file, piece_hash) VALUES (?, ?);";
         sqlite3_stmt *stmt3 = nullptr;
         rc = sqlite3_prepare_v2(db.get(), insert_hashes_query.c_str(), -1, &stmt3, nullptr);
         if (rc != SQLITE_OK) {
@@ -332,13 +340,13 @@ void AppState::save_hashlist(file_hashlist_t hashlist) {
         }
 
         for(const auto &h : hashes) {
-            sqlite3_bind_text(stmt3, 1, h.c_str(), h.size(), 0);
-            sqlite3_bind_text(stmt3, 2, name.c_str(), name.size(), 0);
+            sqlite3_bind_text(stmt3, 1, name.c_str(), name.size(), 0);
+            sqlite3_bind_blob(stmt3, 2, h.c_str(), h.size(), 0);
             rc = sqlite3_step(stmt3);
             if (rc != SQLITE_DONE) {
                 throw std::runtime_error("Failed to step: " + std::string(sqlite3_errmsg(db.get())));
             }
-            sqlite3_reset(stmt3); 
+            sqlite3_reset(stmt3);
         }
         sqlite3_finalize(stmt3);
     }
@@ -365,7 +373,7 @@ void AppState::save_hashlist(file_hashlist_t hashlist) {
             if (rc != SQLITE_DONE) {
                 throw std::runtime_error("Failed to step: " + std::string(sqlite3_errmsg(db.get())));
             }
-            sqlite3_reset(stmt4); 
+            sqlite3_reset(stmt4);
         }
         sqlite3_finalize(stmt4);
     }
@@ -380,7 +388,7 @@ void AppState::save_hashlist(file_hashlist_t hashlist) {
 
 file_hashlist_t AppState::get_hashlist() const {
     file_hashlist_t hashlist;
-    const auto select_hashes_query = std::string("SELECT piece_hash, file FROM ") + HASHLIST_TABLE_NAME + ";";
+    const auto select_hashes_query = std::string("SELECT file, piece_hash FROM ") + HASHLIST_TABLE_NAME + ";";
     sqlite3_stmt *stmt = nullptr;
     auto rc = sqlite3_prepare_v2(db.get(), select_hashes_query.c_str(), -1, &stmt, nullptr);
     if (rc != SQLITE_OK) {
@@ -394,8 +402,10 @@ file_hashlist_t AppState::get_hashlist() const {
         if (rc != SQLITE_ROW) {
             throw std::runtime_error("Failed to step: " + std::string(sqlite3_errmsg(db.get())));
         }
-        const auto hash = std::string(reinterpret_cast<const char *>(sqlite3_column_text(stmt, 0)));
-        const auto file = std::string(reinterpret_cast<const char *>(sqlite3_column_text(stmt, 1)));
+        const auto file = std::string(reinterpret_cast<const char *>(sqlite3_column_text(stmt, 0)));
+        const auto hash_ptr = sqlite3_column_blob(stmt, 1);
+        const auto hash_size = sqlite3_column_bytes(stmt, 1);
+        std::string hash(static_cast<const char*>(hash_ptr), hash_size);
         auto &hashes = hashlist[file].hashes;
         hashes.push_back(hash);
     }

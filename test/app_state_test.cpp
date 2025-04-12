@@ -1,7 +1,10 @@
+#include <filesystem>
 #include <gtest/gtest.h>
 
 #include "../src/db/sqlite.hpp"
 #include "../src/app_state/state.hpp"
+#include "../src/torrent/torrent_download.hpp"
+#include "test_utils.hpp"
 
 TEST(app_state_test, basic_check) {
     const auto maybe_db = db_open(":memory:");
@@ -77,4 +80,30 @@ TEST(app_state_test, hashlist_save_load) {
     EXPECT_EQ(hashlist.size(), 2);
     EXPECT_EQ(hashlist.at("file1").hashes.size(), 2);
     EXPECT_EQ(hashlist.at("file1").linked_files.size(), 1);
+}
+
+TEST(app_state_test, torrent_save_load) {
+    const auto path = std::filesystem::canonical(get_asset("starwars.torrent"));
+    lt::add_torrent_params torrent_params;
+    torrent_params.save_path = get_tmp_dir();
+    torrent_params.ti = std::make_shared<lt::torrent_info>(path.string());
+
+    const auto maybe_db = db_open(":memory:");
+    const auto db = std::get<std::shared_ptr<sqlite3>>(maybe_db);
+    AppState state(db, true);
+    const auto empty_hashlist = state.get_hashlist();
+    EXPECT_EQ(empty_hashlist.size(), 0);
+
+    for (const auto &i : torrent_params.ti->files().file_range()) {
+        const auto f = torrent_params.ti->files().file_path(i);
+        state.file_complete(f);
+    }
+    auto new_hashlist = create_hashlist(*torrent_params.ti, state.get_completed_files());
+    state.save_hashlist(new_hashlist);
+
+    auto hashlist = state.get_hashlist();
+    EXPECT_TRUE(hashlist.size() > 0);
+
+    const auto new_files_set = get_updated_files(*torrent_params.ti, hashlist);
+    EXPECT_EQ(new_files_set.size(), 0);
 }
