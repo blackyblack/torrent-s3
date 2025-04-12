@@ -16,7 +16,7 @@ TEST(app_sync_test, basic_check) {
     torrent_params.ti = std::make_shared<lt::torrent_info>(path.string());
     auto torrent_downloader = std::make_shared<TorrentDownloader>(torrent_params);
     const auto ti = torrent_downloader->get_torrent_info();
-    const auto test_file_name = "Star Wars books\\jq_07_tmot.jpg";
+    const auto test_file_name = torrent_params.ti->files().file_path(lt::file_index_t(276));
     for (const auto &i : torrent_params.ti->files().file_range()) {
         const auto f = torrent_params.ti->files().file_path(i);
         app_state->add_uploading_files(f, {});
@@ -54,7 +54,9 @@ TEST(app_sync_test, restore_state) {
     torrent_params.ti = std::make_shared<lt::torrent_info>(path.string());
     auto torrent_downloader = std::make_shared<TorrentDownloader>(torrent_params);
     const auto ti = torrent_downloader->get_torrent_info();
-    const auto test_file_names = std::unordered_set<std::string>({"Star Wars books\\jq_07_tmot.jpg", "Star Wars books\\bhw_2_ss.jpg"});
+    const auto file1 = torrent_params.ti->files().file_path(lt::file_index_t(276));
+    const auto file2 = torrent_params.ti->files().file_path(lt::file_index_t(277));
+    const auto test_file_names = std::unordered_set<std::string>({file1, file2});
     for (const auto &i : torrent_params.ti->files().file_range()) {
         const auto f = torrent_params.ti->files().file_path(i);
         app_state->add_uploading_files(f, {});

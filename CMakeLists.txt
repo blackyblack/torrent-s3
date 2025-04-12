@@ -1,5 +1,7 @@
 cmake_minimum_required(VERSION 3.16.3)
-cmake_policy(SET CMP0167 NEW)
+if(POLICY CMP0167)
+    cmake_policy(SET CMP0167 NEW)
+endif()
 
 project(torrent-s3 VERSION 1.1.0)
 
@@ -71,7 +73,7 @@ include(GoogleTest)
 gtest_discover_tests(torrent-s3-test)
 
 add_custom_target(format
-  astyle --suffix=none --recursive ./src/*.cpp ./src/*.hpp ./test/*.cpp ./test/*.hpp
+  astyle --suffix=none --recursive "./src/*.cpp" "./src/*.hpp" "./test/*.cpp" "./test/*.hpp"
   WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
   COMMENT "Source code formatting with Astyle"
   VERBATIM
