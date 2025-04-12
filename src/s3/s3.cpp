@@ -1,7 +1,6 @@
 #include <iostream>
 #include <sstream>
 #include <fstream>
-#include <filesystem>
 
 #include "../backoffxx/backoffxx.h"
 
@@ -266,4 +265,41 @@ void S3Uploader::new_file(const std::string &file_name) {
 
 std::optional<std::string> S3Uploader::delete_file(const std::string &file_name) {
     return delete_file_s3(*client, bucket, region, path_to / file_name);
+}
+
+std::variant<bool, std::string> S3Uploader::is_file_existing(const std::string &file_name) {
+    const auto file_path = path_to / file_name;
+    minio::s3::StatObjectArgs args;
+    args.bucket = bucket;
+    args.object = replace(file_path.string(), "\\", "/");
+    if (!region.empty()) {
+        args.region = region;
+    }
+
+    std::string error = "Retry limit reached";
+    minio::s3::StatObjectResponse response;
+    const auto result = backoffxx::attempt(backoffxx::make_exponential(std::chrono::seconds(INITIAL_DELAY_SECONDS), RETRIES, std::chrono::seconds(MAX_DELAY_SECONDS)), [&] {
+        response = client->StatObject(args);
+        if (!response) {
+            // throttling - make retry
+            if (response.status_code == 429 || response.status_code == 0) {
+                return backoffxx::attempt_rc::failure;
+            }
+            error = response.Error().String();
+            return backoffxx::attempt_rc::hard_error;
+        }
+        return backoffxx::attempt_rc::success;
+    });
+
+    if (!result.ok()) {
+        if (error == "NoSuchKey: Object does not exist") {
+            return false;
+        }
+        if (error == "NoSuchBucket: Bucket does not exist") {
+            return false;
+        }
+        return error;
+    }
+    // delete marker is not processed properly by minio so we skip checking it
+    return response.etag.size() > 0;
 }

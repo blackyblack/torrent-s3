@@ -238,3 +238,32 @@ void TorrentDownloader::download_files(const std::vector<std::string> &files) {
         message_queue.push_back(TorrentTaskEventNewFile { f });
     }
 }
+
+lt::torrent_info TorrentDownloader::get_torrent_info() const {
+    return *torrent_params.ti;
+}
+
+static std::tuple<lt::piece_index_t, lt::piece_index_t> file_piece_range(lt::file_storage const& fs, lt::file_index_t const file) {
+    auto const range = fs.map_file(file, 0, 1);
+    std::int64_t const file_size = fs.file_size(file);
+    std::int64_t const piece_size = fs.piece_length();
+    auto const end_piece = lt::piece_index_t(int((static_cast<int>(range.piece)
+                           * piece_size + range.start + file_size - 1) / piece_size + 1));
+    return std::make_tuple(range.piece, end_piece);
+}
+
+std::vector<std::string> get_file_hashes(const lt::torrent_info &torrent, std::string file_name) {
+    const auto file_indexes = get_file_indexes(torrent);
+    const auto file_index_it = file_indexes.find(file_name);
+    if (file_index_it == file_indexes.end()) {
+        return {};
+    }
+    std::vector<std::string> file_hashes;
+    const auto range = file_piece_range(torrent.files(), lt::file_index_t(file_index_it->second));
+    for (lt::piece_index_t pi = std::get<0>(range); pi != std::get<1>(range); pi++) {
+        const auto piece_hash = torrent.hash_for_piece(pi);
+        const auto hash_vector = std::string(piece_hash.data(), piece_hash.size());
+        file_hashes.push_back(hash_vector);
+    }
+    return file_hashes;
+}

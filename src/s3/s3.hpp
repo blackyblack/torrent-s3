@@ -4,6 +4,7 @@
 #include <thread>
 #include <variant>
 #include <optional>
+#include <filesystem>
 
 #include <miniocpp/client.h>
 
@@ -49,7 +50,12 @@ public:
     // progress_queue allows to receive notifications on upload progress
     ThreadSafeDeque<S3ProgressEvent> &get_progress_queue();
     void new_file(const std::string &file_name);
+    // does not require S3 uploader to be started
     std::optional<std::string> delete_file(const std::string &file_name);
+    // returns either file exists or an error message
+    // does not require S3 uploader to be started
+    // delete marker is not supported
+    std::variant<bool, std::string> is_file_existing(const std::string &file_name);
 private:
     ThreadSafeDeque<S3TaskEvent> message_queue;
     ThreadSafeDeque<S3ProgressEvent> progress_queue;
