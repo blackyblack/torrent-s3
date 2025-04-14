@@ -4,8 +4,14 @@ FROM ubuntu:20.04
 ENV DEBIAN_FRONTEND=noninteractive
 RUN --mount=target=/var/cache/apt,id=apt,type=cache,sharing=locked \
     rm -f /etc/apt/apt.conf.d/docker-clean && \
-    apt-get update && apt-get install -y --no-install-recommends sudo build-essential ca-certificates git cmake curl unzip tar zip pkg-config python3 dos2unix && \
+    apt-get update && apt-get install -y --no-install-recommends sudo build-essential ca-certificates git curl unzip tar zip pkg-config python3 dos2unix && \
     rm -rf /var/lib/apt/lists/*
+
+#install cmake 3.22.1
+ADD https://cmake.org/files/v3.22/cmake-3.22.1-linux-x86_64.sh /cmake-3.22.1-linux-x86_64.sh
+RUN mkdir /opt/cmake && \
+    sh /cmake-3.22.1-linux-x86_64.sh --prefix=/opt/cmake --skip-license && \
+    ln -s /opt/cmake/bin/cmake /usr/local/bin/cmake
 
 WORKDIR /home
 RUN --mount=target=/home/vcpkg,id=vcpkg,type=cache,sharing=locked \
@@ -17,7 +23,7 @@ RUN --mount=target=/home/vcpkg,id=vcpkg,type=cache,sharing=locked \
     cd ./vcpkg ; \
     fi && \
     ./bootstrap-vcpkg.sh && \
-    ./vcpkg install minio-cpp libtorrent
+    ./vcpkg install minio-cpp libtorrent gtest sqlite3 libarchive
 
 WORKDIR /home/torrent-s3
 COPY . .

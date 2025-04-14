@@ -14,7 +14,7 @@ Get binaries from the Gihub [Releases](https://github.com/blackyblack/torrent-s3
 - Install libraries
 
   ```sh
-  sudo apt install curl zip unzip tar libarchive-dev
+  sudo apt install curl zip unzip tar
   ```
 
 - Install [vcpkg](https://github.com/microsoft/vcpkg)
@@ -42,6 +42,12 @@ Get binaries from the Gihub [Releases](https://github.com/blackyblack/torrent-s3
 
   ```sh
   ./vcpkg install libtorrent
+  ```
+
+  - Install [libarchive](https://www.libarchive.org/)
+
+  ```sh
+  ./vcpkg install libarchive
   ```
 
   - Install [sqlite3](https://sqlite.org/)
