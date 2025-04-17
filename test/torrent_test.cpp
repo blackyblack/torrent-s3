@@ -125,6 +125,8 @@ TEST(torrent_test, continue_after_overlapping_pieces) {
 }
 
 TEST(torrent_test, unicode_files) {
+    const auto asset_file = std::filesystem::u8path(SOURCE_DIR) / std::filesystem::u8path("test/assets/Документ Microsoft Word (2).htm");
+    EXPECT_TRUE(std::filesystem::exists(asset_file));
     const auto torrent_file = std::filesystem::path(SOURCE_DIR) / "test/assets/я/starwars.torrent";
     EXPECT_TRUE(std::filesystem::exists(std::filesystem::u8path(torrent_file.string())));
     lt::add_torrent_params torrent_params;
@@ -146,7 +148,7 @@ TEST(torrent_test, unicode_files) {
     EXPECT_EQ(download_ok.file_name, to_download);
     EXPECT_EQ(download_ok.file_index, 501);
     EXPECT_TRUE(progress_queue.empty());
-    const auto filename = std::filesystem::path(get_tmp_dir()) / "я/Star Wars books/Документ Microsoft Word (2).htm";
+    const auto filename = std::filesystem::u8path(get_tmp_dir()) / "я/Star Wars books/Документ Microsoft Word (2).htm";
     EXPECT_TRUE(std::filesystem::exists(std::filesystem::u8path(filename.string())));
     std::filesystem::remove_all(get_tmp_dir());
 }

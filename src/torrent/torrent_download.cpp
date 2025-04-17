@@ -11,7 +11,7 @@
 #include "./torrent_download.hpp"
 
 // Workaround for stale torrent metadata. Will retry if no new peers found in STALE_TIMEOUT_SECONDS period.
-#define STALE_TIMEOUT_SECONDS 60
+#define STALE_TIMEOUT_SECONDS 120
 // Up to STALE_RETRIES for stale torrent metadata.
 #define STALE_RETRIES 5
 
