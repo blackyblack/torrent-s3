@@ -1,9 +1,9 @@
-cmake_minimum_required(VERSION 3.16.3)
+cmake_minimum_required(VERSION 3.17)
 if(POLICY CMP0167)
     cmake_policy(SET CMP0167 NEW)
 endif()
 
-project(torrent-s3 VERSION 1.1.0)
+project(torrent-s3 VERSION 1.2.0)
 
 set(CMAKE_CXX_STANDARD 17)
 

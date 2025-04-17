@@ -60,3 +60,4 @@ CMakeUserPresets.json
 build/
 CMakeFiles/
 download/
+.env

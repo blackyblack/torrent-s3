@@ -1,0 +1,6 @@
+services:
+    torrent-s3:
+        build: .
+        env_file: .env
+        volumes:
+        - "../torrent_host:/torrent"
