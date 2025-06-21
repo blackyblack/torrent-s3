@@ -26,7 +26,8 @@ public:
         std::shared_ptr<TorrentDownloader> torrent_downloader_,
         unsigned long long limit_size_bytes,
         std::string download_path_,
-        bool extract_files_);
+        bool extract_files_,
+        bool archive_files_);
 
     // start sync by selecting next chunk and downloading it
     // optionally returns an error
@@ -52,8 +53,6 @@ public:
     // update state after failed uploading file to s3
     void process_s3_file_error(std::string file_name, std::string error_message);
 
-    void process_deleted_files();
-
     void update_hashlist();
 
     // true if sync is completed
@@ -70,6 +69,7 @@ private:
     std::shared_ptr<TorrentDownloader> torrent_downloader;
     std::string download_path;
     bool extract_files;
+    bool archive_files;
     unsigned long long limit_size;
     bool download_error;
     bool has_uploading_files;

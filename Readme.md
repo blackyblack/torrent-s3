@@ -1,7 +1,7 @@
 # torrent-s3
 
 Downloads files from torrent and saves to S3 storage. Allows to use limited intermediate server storage, given files are small enough.
-Supports automatical archives (zip, rar, 7zip) extraction before uploading to S3.
+Supports automatical archives (zip, rar, 7zip) extraction before uploading to S3. Supports automatical archivation (zip) before uploading to S3.
 
 # Installation
 
@@ -44,13 +44,13 @@ Get binaries from the Gihub [Releases](https://github.com/blackyblack/torrent-s3
   ./vcpkg install libtorrent
   ```
 
-  - Install [libarchive](https://www.libarchive.org/)
+- Install [libarchive](https://www.libarchive.org/)
 
   ```sh
   ./vcpkg install libarchive
   ```
 
-  - Install [sqlite3](https://sqlite.org/)
+- Install [sqlite3](https://sqlite.org/)
 
   ```sh
   ./vcpkg install sqlite3
@@ -125,13 +125,25 @@ Run image from [here](https://hub.docker.com/repository/docker/blackyblacky/torr
 > Limit size only applies to downloaded files. Make sure to have additional space for extracted files.
 
     Extract archives example: `./torrent-s3 --extract-files`
-13. `--state-file` or `-q` - Path for application state SQLite database. Application state is stored in `<download-path>/default.sqlite`, if not set. Set  `--state-file=:memory:` to use in-memory storage;
+13. `--archive-files` or `-z` - Archive (zip) files before uploading to S3;
 > [!NOTE]
-> Application state allows to track torrent contents modifications. New files are synced with S3 and deleted files are removed from S3. Also sync process can be terminated at any moment and resumed later.
+> Archived files (7zip, zip, rar and rar5) are not processed.
 
 > [!NOTE]
-> Since sync process works in `mirror` mode, i.e. adds to S3 all files from .torrent file and removes all files, which are not in file, different torrent files should be synced
-> with different states. For example, run sync for `torrent_a` with `./torrent-s3 --state-file=./tmp/torrent_a.sqlite` and for `torrent_b` with `./torrent-s3 --state-file=./tmp/torrent_b.sqlite`.
+> `--extract-files` and `--archive-files` are not mutually exclusive. Archive will be extracted to a temporary folder and
+> each file will be archived before uploading, when using both options together.
+
+    Archive files example: `./torrent-s3 --archive-files`
+14. `--state-file` or `-q` - Path for application state SQLite database. Application state is stored in `<download-path>/default.sqlite`, if not set. Set  `--state-file=:memory:` to use in-memory storage;
+> [!NOTE]
+> Application state allows to track torrent contents modifications. New files are synced with S3. Also sync process can be terminated at any moment and resumed later.
+
+> [!NOTE]
+> Application does not track deleted files, it syncs in `append only` mode.
+
+> [!NOTE]
+> Since sync process adds to S3 all files from .torrent file, different torrent files should be synced with different state files.
+> For example, run sync for `torrent_a` with `./torrent-s3 --state-file=./tmp/torrent_a.sqlite` and for `torrent_b` with `./torrent-s3 --state-file=./tmp/torrent_b.sqlite`.
 
     Application state example: `./torrent-s3 --state-file=./tmp/default.sqlite`
 

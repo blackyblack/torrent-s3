@@ -50,6 +50,7 @@ int main(int argc, char const* argv[]) {
            ("d,download-path", "Temporary directory for downloaded files", cxxopts::value<std::string>())
            ("l,limit-size", "Temporary directory maximum size in bytes", cxxopts::value<unsigned long long>())
            ("x,extract-files", "Extract downloaded archives before uploading")
+           ("z,archive-files", "Archive files before uploading")
            ("q,state-file", std::string("Path to application state file. Default is <download-path>/") + std::string(STATE_STORAGE_NAME), cxxopts::value<std::string>())
            ("v,version", "Show version")
            ("h,help", "Show help");
@@ -160,6 +161,7 @@ int main(int argc, char const* argv[]) {
     }
 
     const auto extract_files = args.count("extract-files") > 0;
+    const auto archive_files = args.count("archive-files") > 0;
 
     fprintf(stdout, "Torrent-S3 starting\n");
 
@@ -218,7 +220,8 @@ int main(int argc, char const* argv[]) {
         torrent_downloader,
         limit_size_bytes,
         download_path,
-        extract_files
+        extract_files,
+        archive_files
     );
 
     const auto sync_ret = app_sync.full_sync();

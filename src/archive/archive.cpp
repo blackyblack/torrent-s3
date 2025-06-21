@@ -1,3 +1,12 @@
+#include <fstream>
+#include <fcntl.h>
+
+#ifdef _WIN32
+#include <io.h>
+#else
+#include <unistd.h>
+#endif // _WIN32
+
 #include <archive.h>
 #include <archive_entry.h>
 
@@ -106,4 +115,73 @@ std::variant<std::vector<file_unpack_info_t>, std::string> unpack_file(std::file
     archive_write_close(write_file);
     archive_write_free(write_file);
     return unpacked_files;
+}
+
+std::optional<std::string> zip_file(std::filesystem::path source_path, std::filesystem::path dest_path) {
+    const auto dest_file = std::filesystem::u8path(dest_path.string()).string();
+    auto *arch = archive_write_new();
+    archive_write_set_options(arch, "hdrcharset=UTF-8");
+    auto ret = archive_write_set_format_zip(arch);
+    if (ret != ARCHIVE_OK) {
+        const auto err_string = archive_error_string(arch);
+        archive_write_close(arch);
+        archive_write_free(arch);
+        return std::string("Failed to create archive from \"") + source_path.string() + "\": " + err_string;
+    }
+    ret = archive_write_zip_set_compression_deflate(arch);
+    if (ret != ARCHIVE_OK) {
+        const auto err_string = archive_error_string(arch);
+        archive_write_close(arch);
+        archive_write_free(arch);
+        return std::string("Failed to create archive from \"") + source_path.string() + "\": " + err_string;
+    }
+    std::filesystem::create_directories(std::filesystem::u8path(dest_path.parent_path().string()));
+
+    auto fd = open(dest_file.c_str(), O_RDWR | O_CREAT | O_TRUNC);
+    if (fd < 0) {
+        return std::string("Failed to write file \"") + dest_file + "\"";
+    }
+
+    ret = archive_write_open_fd(arch, fd);
+    if (ret != ARCHIVE_OK) {
+        const auto err_string = archive_error_string(arch);
+        archive_write_close(arch);
+        archive_write_free(arch);
+        close(fd);
+        return std::string("Failed to create archive from \"") + source_path.string() + "\": " + err_string;
+    }
+    auto *entry = archive_entry_new();
+    archive_entry_set_pathname(entry, source_path.filename().string().c_str());
+    archive_entry_set_filetype(entry, AE_IFREG);
+    ret = archive_write_header(arch, entry);
+    if (ret != ARCHIVE_OK) {
+        const auto err_string = archive_error_string(arch);
+        archive_write_close(arch);
+        archive_write_free(arch);
+        close(fd);
+        return std::string("Failed to create archive from \"") + source_path.string() + "\": " + err_string;
+    }
+    std::ifstream file(std::filesystem::u8path(source_path.string()), std::ios::binary);
+    if (!file) {
+        archive_entry_free(entry);
+        archive_write_close(arch);
+        archive_write_free(arch);
+        close(fd);
+        return std::string("Failed to create archive from \"") + source_path.string() + "\"";
+    }
+
+    char buff[READ_BLOCK_SIZE];
+    while (!file.eof()) {
+        file.read(buff, READ_BLOCK_SIZE);
+        std::streamsize bytes_read = file.gcount();
+        if (bytes_read > 0) {
+            archive_write_data(arch, buff, static_cast<size_t>(bytes_read));
+        }
+    }
+    archive_write_finish_entry(arch);
+    archive_entry_free(entry);
+    archive_write_close(arch);
+    archive_write_free(arch);
+    close(fd);
+    return std::nullopt;
 }

@@ -3,7 +3,7 @@ if(POLICY CMP0167)
     cmake_policy(SET CMP0167 NEW)
 endif()
 
-project(torrent-s3 VERSION 1.2.0)
+project(torrent-s3 VERSION 1.3.0)
 
 set(CMAKE_CXX_STANDARD 17)
 

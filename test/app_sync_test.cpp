@@ -34,6 +34,7 @@ TEST(app_sync_test, basic_check) {
         torrent_downloader,
         LLONG_MAX,
         download_path,
+        false,
         false
     );
     const auto sync_ret = app_sync.full_sync();
@@ -77,6 +78,7 @@ TEST(app_sync_test, restore_state) {
         torrent_downloader,
         LLONG_MAX,
         download_path,
+        false,
         false
     );
     const auto sync_start_ret = app_sync.start();
@@ -124,6 +126,7 @@ TEST(app_sync_test, restore_state) {
         torrent_downloader,
         LLONG_MAX,
         download_path,
+        false,
         false
     );
 
