@@ -1,6 +1,11 @@
 #include <fstream>
-#include <io.h>
 #include <fcntl.h>
+
+#ifdef _WIN32
+#include <io.h>
+#else
+#include <unistd.h>
+#endif // _WIN32
 
 #include <archive.h>
 #include <archive_entry.h>
@@ -132,7 +137,7 @@ std::optional<std::string> zip_file(std::filesystem::path source_path, std::file
     }
     std::filesystem::create_directories(std::filesystem::u8path(dest_path.parent_path().string()));
 
-    auto fd = open(dest_file.c_str(), O_RDWR | _O_CREAT | O_TRUNC);
+    auto fd = open(dest_file.c_str(), O_RDWR | O_CREAT | O_TRUNC);
     if (fd < 0) {
         return std::string("Failed to write file \"") + dest_file + "\"";
     }
