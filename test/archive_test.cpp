@@ -103,3 +103,14 @@ TEST(archive_test, unpack_unicode_output_name) {
     EXPECT_EQ(files.size(), 1);
     std::filesystem::remove_all(get_tmp_dir());
 }
+
+TEST(archive_test, zip_file) {
+    const auto filename = std::filesystem::path(SOURCE_DIR) / "test/assets/Документ Microsoft Word (2).htm";
+    const auto zip_file_path = std::filesystem::path(get_tmp_dir()) / "я" / "Документ Microsoft Word (2).htm.zip";
+    const auto ret = zip_file(filename, zip_file_path);
+    EXPECT_FALSE(ret.has_value());
+    EXPECT_TRUE(std::filesystem::exists(std::filesystem::u8path(zip_file_path.string()).string()));
+    EXPECT_TRUE(is_packed(zip_file_path.string()));
+    std::filesystem::remove_all(get_tmp_dir());
+}
+

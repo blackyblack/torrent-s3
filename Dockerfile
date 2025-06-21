@@ -9,9 +9,9 @@ RUN --mount=target=/var/cache/apt,id=apt,type=cache,sharing=locked \
 
 # unicode support
 RUN locale-gen en_US.UTF-8
-ENV LANG en_US.UTF-8
-ENV LANGUAGE en_US:en
-ENV LC_ALL en_US.UTF-8
+ENV LANG=en_US.UTF-8
+ENV LANGUAGE=en_US:en
+ENV LC_ALL=en_US.UTF-8
 
 # install cmake 3.22.1
 ADD https://cmake.org/files/v3.22/cmake-3.22.1-linux-x86_64.sh /cmake-3.22.1-linux-x86_64.sh

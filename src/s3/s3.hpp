@@ -14,6 +14,7 @@ struct S3TaskEventTerminate {};
 
 struct S3TaskEventNewFile {
     std::string file_name;
+    bool should_archive; // if true, file will be zipped before upload
 };
 
 typedef std::variant<S3TaskEventTerminate, S3TaskEventNewFile> S3TaskEvent;
@@ -49,7 +50,7 @@ public:
     void stop();
     // progress_queue allows to receive notifications on upload progress
     ThreadSafeDeque<S3ProgressEvent> &get_progress_queue();
-    void new_file(const std::string &file_name);
+    void new_file(const std::string &file_name, bool should_archive = false);
     // does not require S3 uploader to be started
     std::optional<std::string> delete_file(const std::string &file_name);
     // returns either file exists or an error message

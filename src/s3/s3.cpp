@@ -5,6 +5,7 @@
 #include "../backoffxx/backoffxx.h"
 
 #include "./s3.hpp"
+#include "../archive/archive.hpp"
 
 // how many S3 upload tasks to run simultaneously
 #define TASKS_COUNT_DEFAULT 16
@@ -43,13 +44,15 @@ S3Uploader::S3Uploader(
 }
 
 static std::string gen_random(const int len) {
-    static const char alphanum[] =
-        "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
-        "abcdefghijklmnopqrstuvwxyz";
+    static const char alphanum[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+    static std::mt19937 rng(std::chrono::steady_clock::now().time_since_epoch().count());
+    // minus one for termination zero symbol, minus one because of zero-based index
+    static std::uniform_int_distribution<int> dist(0, sizeof(alphanum) - 2);
+    
     std::string tmp_s;
     tmp_s.reserve(len);
     for (int i = 0; i < len; ++i) {
-        tmp_s += alphanum[rand() % (sizeof(alphanum) - 1)];
+        tmp_s += alphanum[dist(rng)];
     }
     return tmp_s;
 }
@@ -170,6 +173,12 @@ static std::variant<bool, std::string> exists_bucket_s3(minio::s3::Client &clien
     return exists;
 }
 
+static std::filesystem::path filename_to_archived_path(std::filesystem::path file_name, std::string file_prefix) {
+    file_name = file_name.replace_filename(file_prefix + "_" + file_name.filename().string());
+    file_name = file_name.replace_extension(file_name.extension().string() + ".zip");
+    return std::filesystem::absolute(file_name).lexically_normal();
+}
+
 static void s3_upload_task(
     ThreadSafeDeque<S3ProgressEvent> &progress_queue,
     const std::string &url,
@@ -188,24 +197,48 @@ static void s3_upload_task(
     minio::creds::StaticProvider provider(access_key, secret_key);
     minio::s3::Client client(base_url, &provider);
 
+    const auto archived_name_random_part = gen_random(RANDOM_FILE_NAME_LENGTH);
+
     while (true) {
         const auto event = message_queue.pop_front_waiting();
         if (std::holds_alternative<S3TaskEventTerminate>(event)) {
             break;
         }
         const auto file_event = std::get<S3TaskEventNewFile>(event);
-        const auto save_from_filename = (path_from / file_event.file_name).lexically_normal();
-        fprintf(stdout, "[Task %u] Uploading %s\n", task_index + 1, save_from_filename.string().c_str());
+        auto save_to_filename = (path_to / file_event.file_name).lexically_normal();
+        auto save_from_filename = (path_from / file_event.file_name).lexically_normal();
+        auto is_temporary_file = false;
 
-        const auto save_to_filename = (path_to / file_event.file_name).lexically_normal();
+        if (file_event.should_archive && !is_packed(save_from_filename)) {
+            fprintf(stdout, "[Task %u] Archiving %s\n", task_index + 1, save_from_filename.string().c_str());
+            const auto temporary_file = filename_to_archived_path(save_from_filename, archived_name_random_part);
+            const auto zip_result = zip_file(save_from_filename, temporary_file);
+            if (zip_result.has_value()) {
+                fprintf(stderr, "[Task %u] Could not archive file \"%s\". Error: %s\n", task_index + 1, save_from_filename.string().c_str(), zip_result.value().c_str());
+            } else {
+                save_to_filename = save_to_filename.replace_extension(save_to_filename.extension().string() + ".zip");
+                save_from_filename = temporary_file;
+                is_temporary_file = true;
+            }
+        }
+
+        fprintf(stdout, "[Task %u] Uploading %s\n", task_index + 1, save_from_filename.string().c_str());
 
         const auto ret = write_file_s3(save_from_filename, client, bucket, region, save_to_filename);
         if (ret.has_value()) {
             fprintf(stderr, "[Task %u] Could not upload file \"%s\". Error %s\n", task_index + 1, save_from_filename.string().c_str(), ret.value().c_str());
             progress_queue.push_back(S3ProgressUploadError { file_event.file_name, ret.value() });
+            if (is_temporary_file) {
+                // erase archive after failed upload
+                std::filesystem::remove(std::filesystem::u8path(save_from_filename.string()));
+            }
             continue;
         }
         progress_queue.push_back(S3ProgressUploadOk { file_event.file_name });
+        if (is_temporary_file) {
+            // erase archive after upload
+            std::filesystem::remove(std::filesystem::u8path(save_from_filename.string()));
+        }
     }
 
     fprintf(stdout, "S3 upload task #%u completed\n", task_index + 1);
@@ -259,8 +292,8 @@ ThreadSafeDeque<S3ProgressEvent> &S3Uploader::get_progress_queue() {
     return progress_queue;
 }
 
-void S3Uploader::new_file(const std::string &file_name) {
-    message_queue.push_back(S3TaskEventNewFile { file_name });
+void S3Uploader::new_file(const std::string &file_name, bool should_archive) {
+    message_queue.push_back(S3TaskEventNewFile { file_name, should_archive });
 }
 
 std::optional<std::string> S3Uploader::delete_file(const std::string &file_name) {
