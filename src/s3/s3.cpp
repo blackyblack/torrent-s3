@@ -149,7 +149,7 @@ static std::variant<bool, std::string> exists_bucket_s3(minio::s3::Client &clien
     }
 
     std::string error = "Retry limit reached";
-    bool exists;
+    bool exists = false;
     const auto result = backoffxx::attempt(backoffxx::make_exponential(std::chrono::seconds(INITIAL_DELAY_SECONDS), RETRIES, std::chrono::seconds(MAX_DELAY_SECONDS)), [&] {
         const auto resp = client.BucketExists(args);
         if (!resp) {
@@ -160,9 +160,7 @@ static std::variant<bool, std::string> exists_bucket_s3(minio::s3::Client &clien
             error = resp.Error().String();
             return backoffxx::attempt_rc::hard_error;
         }
-        if (resp.exist) {
-            exists = true;
-        }
+        exists = resp.exist;
         return backoffxx::attempt_rc::success;
     });
 
@@ -171,6 +169,33 @@ static std::variant<bool, std::string> exists_bucket_s3(minio::s3::Client &clien
     }
 
     return exists;
+}
+
+static std::optional<std::string> create_bucket_s3(minio::s3::Client &client, const std::string &bucket, const std::string &region) {
+    minio::s3::MakeBucketArgs args;
+    args.bucket = bucket;
+    if (!region.empty()) {
+        args.region = region;
+    }
+
+    std::string error = "Retry limit reached";
+    const auto result = backoffxx::attempt(backoffxx::make_exponential(std::chrono::seconds(INITIAL_DELAY_SECONDS), RETRIES, std::chrono::seconds(MAX_DELAY_SECONDS)), [&] {
+        const auto resp = client.MakeBucket(args);
+        if (!resp) {
+            // throttling - make retry
+            if (resp.status_code == 429 || resp.status_code == 0) {
+                return backoffxx::attempt_rc::failure;
+            }
+            error = resp.Error().String();
+            return backoffxx::attempt_rc::hard_error;
+        }
+        return backoffxx::attempt_rc::success;
+    });
+
+    if (!result.ok()) {
+        return error;
+    }
+    return std::nullopt;
 }
 
 static std::filesystem::path filename_to_archived_path(std::filesystem::path file_name, std::string file_prefix) {
@@ -251,7 +276,10 @@ std::optional<std::string> S3Uploader::start() {
     }
     const auto exists = std::get<bool>(exists_variant);
     if (!exists) {
-        return std::string("Bucket \"") + bucket + std::string("\" does not exist");
+        const auto create_option = create_bucket_s3(*client, bucket, region);
+        if (create_option.has_value()) {
+            return std::string("Could not create bucket \"") + bucket + std::string("\". Error: ") + create_option.value();
+        }
     }
 
     std::string empty_file;
