@@ -16,6 +16,8 @@
 #define INITIAL_DELAY_SECONDS 5
 #define MAX_DELAY_SECONDS 60
 
+static minio::s3::BaseUrl make_base_url(const std::string &url);
+
 S3Uploader::S3Uploader(
     unsigned int thread_count_,
     const std::string &url_,
@@ -38,7 +40,7 @@ S3Uploader::S3Uploader(
         thread_count = TASKS_COUNT_DEFAULT;
     }
 
-    minio::s3::BaseUrl base_url(url);
+    minio::s3::BaseUrl base_url = make_base_url(url);
     provider = std::make_unique<minio::creds::StaticProvider>(access_key, secret_key);
     client = std::make_unique<minio::s3::Client>(base_url, provider.get());
 }
@@ -64,6 +66,18 @@ static std::string replace(std::string subject, const std::string& search, const
         pos += replace.length();
     }
     return subject;
+}
+
+static minio::s3::BaseUrl make_base_url(const std::string &url) {
+    const auto http_prefix = std::string("http://");
+    const auto https_prefix = std::string("https://");
+    if (url.find(http_prefix) == 0) {
+        return minio::s3::BaseUrl(url.substr(http_prefix.size()), false);
+    }
+    if (url.find(https_prefix) == 0) {
+        return minio::s3::BaseUrl(url.substr(https_prefix.size()), true);
+    }
+    return minio::s3::BaseUrl(url);
 }
 
 static std::optional<std::string> write_stream_s3(std::istream &stream, unsigned long content_size, minio::s3::Client &client, const std::string &bucket, const std::string &region, const std::filesystem::path &path) {
@@ -218,7 +232,7 @@ static void s3_upload_task(
 ) {
     fprintf(stdout, "Starting S3 upload task #%u\n", task_index + 1);
 
-    minio::s3::BaseUrl base_url(url);
+    minio::s3::BaseUrl base_url = make_base_url(url);
     minio::creds::StaticProvider provider(access_key, secret_key);
     minio::s3::Client client(base_url, &provider);
 
